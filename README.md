@@ -29,6 +29,7 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 ### Prerequisites
 - Node.js 16+ and npm
+- Modern web browser (Chrome, Firefox, Safari, Edge)
 
 ### Setup
 
@@ -49,6 +50,17 @@ npm run dev
 ```
 
 The game will open in your browser at `http://localhost:3000`
+
+### Running with Python Engine (Pyodide)
+
+By default, the game attempts to load Pyodide from CDN to run the Python game engine in the browser. If Pyodide is unavailable (e.g., CDN blocked), the game automatically falls back to a JavaScript mock engine that provides the same functionality.
+
+To ensure Python engine works:
+- Ensure internet connection for CDN access
+- Check browser console for "Running with Python/Pyodide engine" message
+- If you see "Running with JavaScript mock engine", the fallback is active
+
+Both engines provide identical gameplay experience.
 
 ## Development
 
@@ -97,12 +109,13 @@ npm run test:e2e
 ```
 wave/
 ├── game_engine.py       # Python game logic and state management
+├── mock_engine.js       # JavaScript fallback engine (same API as Python)
 ├── index.html           # Main HTML structure with canvas
 ├── main.js              # JavaScript rendering and Pyodide integration
 ├── vite.config.js       # Vite bundler configuration
 ├── package.json         # Node dependencies and scripts
 ├── tests/
-│   ├── test_game_engine.py   # Python unit tests
+│   ├── test_game_engine.py   # Python unit tests (20 tests)
 │   └── e2e/
 │       └── game.spec.js       # Playwright E2E tests
 └── README.md
