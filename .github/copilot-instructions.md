@@ -28,6 +28,8 @@
 
 ## UI/Interaction Patterns
 - Canvas-based stadium rendering; sector states visualized by color and animation.
+- **High-DPI Support:** Canvas uses `devicePixelRatio` scaling for crisp rendering on all displays.
+- **Performance:** Precomputed sector paths, cached gradients, and debounced resize handlers prevent stuttering.
 - User actions:
   - Left-click sector: start wave at that sector
   - Right-click sector: boost energy
