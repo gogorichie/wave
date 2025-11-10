@@ -21,6 +21,7 @@
 
 ## Engine Integration Pattern
 - JS calls Python via Pyodide using `runPython`/`runPythonAsync` for all game state changes.
+- **Security:** All parameters passed to Python use `pyodide.globals.set()` instead of string interpolation to prevent code injection.
 - If Pyodide fails to load, `useMockEngine` is set and all API calls are routed to `mockGameAPI` (JS implementation).
 - Both engines expose the same API: `init_game`, `update_game`, `start_wave_at`, `boost_sector_energy`, `get_game_state`, `get_events`, `save_game`, `load_game`.
 - Game state is always serialized as JSON for JS rendering.
@@ -45,6 +46,7 @@
 - **Game state** is always passed as JSON between Python/JS.
 - **Sector state machine:** idle → anticipating → standing → seated, with energy/fatigue/distraction affecting readiness.
 - **Wave propagation** is clockwise, with combo/bonus logic in both engines.
+- **Security pattern:** Use `pyodide.globals.set('param_name', value)` then `pyodide.runPython('func_name(param_name)')` instead of template literals to prevent injection attacks.
 
 ## Example: Adding a New Game Mechanic
 - Update both `game_engine.py` and `mock_engine.js` to keep APIs in sync.

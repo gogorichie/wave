@@ -78,7 +78,8 @@ function updateGameState(dt) {
             stateJson = mockGameAPI.update_game(dt);
             eventsJson = mockGameAPI.get_events();
         } else {
-            stateJson = pyodide.runPython(`update_game(${dt})`);
+            pyodide.globals.set('dt_value', dt);
+            stateJson = pyodide.runPython(`update_game(dt_value)`);
             eventsJson = pyodide.runPython(`get_events()`);
         }
         
@@ -146,7 +147,8 @@ function startWave(sectorId) {
         if (useMockEngine) {
             resultJson = mockGameAPI.start_wave_at(sectorId);
         } else {
-            resultJson = pyodide.runPython(`start_wave_at(${sectorId})`);
+            pyodide.globals.set('sector_id', sectorId);
+            resultJson = pyodide.runPython(`start_wave_at(sector_id)`);
         }
         const result = JSON.parse(resultJson);
         return result.success;
@@ -164,7 +166,8 @@ function boostSector(sectorId) {
         if (useMockEngine) {
             mockGameAPI.boost_sector_energy(sectorId);
         } else {
-            pyodide.runPython(`boost_sector_energy(${sectorId})`);
+            pyodide.globals.set('sector_id', sectorId);
+            pyodide.runPython(`boost_sector_energy(sector_id)`);
         }
     } catch (error) {
         console.error('Failed to boost sector:', error);
@@ -200,7 +203,8 @@ function loadGame() {
             if (useMockEngine) {
                 mockGameAPI.load_game(saveData);
             } else {
-                pyodide.runPython(`load_game('${saveData}')`);
+                pyodide.globals.set('save_data', saveData);
+                pyodide.runPython(`load_game(save_data)`);
             }
             showNotification('Game Loaded!', 'success');
         } else {
