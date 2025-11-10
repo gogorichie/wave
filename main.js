@@ -3,8 +3,11 @@
  * Handles Pyodide initialization, rendering, and game loop
  */
 
+import { mockGameAPI } from './mock_engine.js';
+
 // Global state
 let pyodide = null;
+let useMockEngine = false;
 let canvas = null;
 let ctx = null;
 let gameState = null;
@@ -20,6 +23,13 @@ const SECTOR_HEIGHT = 60;
  * Initialize Pyodide and load Python game engine
  */
 async function initPyodide() {
+    // Check if Pyodide is available
+    if (typeof loadPyodide === 'undefined') {
+        console.warn('Pyodide not available, using mock JavaScript engine');
+        useMockEngine = true;
+        return true;
+    }
+    
     try {
         console.log('Loading Pyodide...');
         pyodide = await loadPyodide();
@@ -33,7 +43,9 @@ async function initPyodide() {
         return true;
     } catch (error) {
         console.error('Failed to initialize Pyodide:', error);
-        return false;
+        console.log('Falling back to mock JavaScript engine');
+        useMockEngine = true;
+        return true;
     }
 }
 
@@ -42,7 +54,12 @@ async function initPyodide() {
  */
 function initGame() {
     try {
-        const result = pyodide.runPython(`init_game(16)`);
+        let result;
+        if (useMockEngine) {
+            result = mockGameAPI.init_game(16);
+        } else {
+            result = pyodide.runPython(`init_game(16)`);
+        }
         console.log('Game initialized:', result);
         return true;
     } catch (error) {
@@ -56,11 +73,16 @@ function initGame() {
  */
 function updateGameState(dt) {
     try {
-        const stateJson = pyodide.runPython(`update_game(${dt})`);
-        gameState = JSON.parse(stateJson);
+        let stateJson, eventsJson;
+        if (useMockEngine) {
+            stateJson = mockGameAPI.update_game(dt);
+            eventsJson = mockGameAPI.get_events();
+        } else {
+            stateJson = pyodide.runPython(`update_game(${dt})`);
+            eventsJson = pyodide.runPython(`get_events()`);
+        }
         
-        // Check for events
-        const eventsJson = pyodide.runPython(`get_events()`);
+        gameState = JSON.parse(stateJson);
         const events = JSON.parse(eventsJson);
         
         events.forEach(event => handleGameEvent(event));
@@ -120,7 +142,12 @@ function playSound(type) {
  */
 function startWave(sectorId) {
     try {
-        const resultJson = pyodide.runPython(`start_wave_at(${sectorId})`);
+        let resultJson;
+        if (useMockEngine) {
+            resultJson = mockGameAPI.start_wave_at(sectorId);
+        } else {
+            resultJson = pyodide.runPython(`start_wave_at(${sectorId})`);
+        }
         const result = JSON.parse(resultJson);
         return result.success;
     } catch (error) {
@@ -134,7 +161,11 @@ function startWave(sectorId) {
  */
 function boostSector(sectorId) {
     try {
-        pyodide.runPython(`boost_sector_energy(${sectorId})`);
+        if (useMockEngine) {
+            mockGameAPI.boost_sector_energy(sectorId);
+        } else {
+            pyodide.runPython(`boost_sector_energy(${sectorId})`);
+        }
     } catch (error) {
         console.error('Failed to boost sector:', error);
     }
@@ -145,7 +176,12 @@ function boostSector(sectorId) {
  */
 function saveGame() {
     try {
-        const saveData = pyodide.runPython(`save_game()`);
+        let saveData;
+        if (useMockEngine) {
+            saveData = mockGameAPI.save_game();
+        } else {
+            saveData = pyodide.runPython(`save_game()`);
+        }
         localStorage.setItem('wave_game_save', saveData);
         showNotification('Game Saved!', 'success');
     } catch (error) {
@@ -161,7 +197,11 @@ function loadGame() {
     try {
         const saveData = localStorage.getItem('wave_game_save');
         if (saveData) {
-            pyodide.runPython(`load_game('${saveData}')`);
+            if (useMockEngine) {
+                mockGameAPI.load_game(saveData);
+            } else {
+                pyodide.runPython(`load_game('${saveData}')`);
+            }
             showNotification('Game Loaded!', 'success');
         } else {
             showNotification('No save found!', 'failure');
@@ -512,12 +552,19 @@ async function main() {
     // Setup canvas
     setupCanvas();
     
-    // Initialize Pyodide
+    // Initialize Pyodide or fallback to mock
     const success = await initPyodide();
     
     if (success) {
         // Hide loading screen
         document.getElementById('loading').classList.add('hidden');
+        
+        // Show engine info
+        if (useMockEngine) {
+            console.log('Running with JavaScript mock engine');
+        } else {
+            console.log('Running with Python/Pyodide engine');
+        }
         
         // Setup input handlers
         setupInputHandlers();
@@ -528,7 +575,7 @@ async function main() {
         console.log('Game ready!');
     } else {
         document.getElementById('loading').innerHTML = 
-            '<h2>Failed to Load</h2><p>Could not initialize Python runtime</p>';
+            '<h2>Failed to Load</h2><p>Could not initialize game engine</p>';
     }
 }
 
