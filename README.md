@@ -60,7 +60,7 @@ To ensure Python engine works:
 - Check browser console for "Running with Python/Pyodide engine" message
 - If you see "Running with JavaScript mock engine", the fallback is active
 
-Both engines provide identical gameplay experience.
+Both engines provide an identical gameplay experience.
 
 ## Development
 
@@ -157,4 +157,4 @@ MIT
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Deployment
-[![Azure Static Web Apps CI/CD](https://github.com/gogorichie/wave/actions/workflows/azure-static-web-apps-victorious-cliff-0ab69fe0f.yml/badge.svg)](https://github.com/gogorichie/wave/actions/workflows/azure-static-web-apps-victorious-cliff-0ab69fe0f.yml)
+[![.github/workflows/ci-cd.yml](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml)
