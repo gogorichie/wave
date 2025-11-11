@@ -29,13 +29,21 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Install Python dependencies
+        run: pip install pytest
 
       - name: Run tests
         run: npm test
 
-release:
+  release:
     name: Create Release
     runs-on: ubuntu-latest
     needs: test
@@ -62,7 +70,7 @@ release:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release
-  
+
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
