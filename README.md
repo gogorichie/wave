@@ -1,4 +1,4 @@
-# Stadium Wave Game 🌊
+# Stadium Wave Game 🏟️
 
 A browser-based interactive game where players orchestrate the stadium "wave" by coordinating with AI-controlled crowd sectors to achieve synchronized animations and earn combo points.
 

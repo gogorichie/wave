@@ -19,6 +19,12 @@ let isGameRunning = false;
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
 
+// Performance optimization
+let sectorPaths = [];
+let offscreenCanvas = null;
+let offscreenCtx = null;
+let resizeTimeout = null;
+
 /**
  * Initialize Pyodide and load Python game engine
  */
@@ -78,7 +84,8 @@ function updateGameState(dt) {
             stateJson = mockGameAPI.update_game(dt);
             eventsJson = mockGameAPI.get_events();
         } else {
-            stateJson = pyodide.runPython(`update_game(${dt})`);
+            pyodide.globals.set('dt_value', dt);
+            stateJson = pyodide.runPython(`update_game(dt_value)`);
             eventsJson = pyodide.runPython(`get_events()`);
         }
         
@@ -146,7 +153,8 @@ function startWave(sectorId) {
         if (useMockEngine) {
             resultJson = mockGameAPI.start_wave_at(sectorId);
         } else {
-            resultJson = pyodide.runPython(`start_wave_at(${sectorId})`);
+            pyodide.globals.set('sector_id', sectorId);
+            resultJson = pyodide.runPython(`start_wave_at(sector_id)`);
         }
         const result = JSON.parse(resultJson);
         return result.success;
@@ -164,7 +172,8 @@ function boostSector(sectorId) {
         if (useMockEngine) {
             mockGameAPI.boost_sector_energy(sectorId);
         } else {
-            pyodide.runPython(`boost_sector_energy(${sectorId})`);
+            pyodide.globals.set('sector_id', sectorId);
+            pyodide.runPython(`boost_sector_energy(sector_id)`);
         }
     } catch (error) {
         console.error('Failed to boost sector:', error);
@@ -200,7 +209,8 @@ function loadGame() {
             if (useMockEngine) {
                 mockGameAPI.load_game(saveData);
             } else {
-                pyodide.runPython(`load_game('${saveData}')`);
+                pyodide.globals.set('save_data', saveData);
+                pyodide.runPython(`load_game(save_data)`);
             }
             showNotification('Game Loaded!', 'success');
         } else {
@@ -213,30 +223,117 @@ function loadGame() {
 }
 
 /**
- * Setup canvas
+ * Debounce function to prevent excessive resize calls
+ */
+function debounce(func, wait) {
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(resizeTimeout);
+            func.apply(this, args);
+        };
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(later, wait);
+    };
+}
+
+/**
+ * Setup high-DPI canvas with proper scaling
+ */
+function setupHighDPICanvas(canvas, ctx, container) {
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const rect = container.getBoundingClientRect();
+    
+    // Set display size (CSS pixels)
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    
+    // Set actual size (device pixels)
+    canvas.width = rect.width * devicePixelRatio;
+    canvas.height = rect.height * devicePixelRatio;
+    
+    // Scale context to ensure correct drawing operations
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    
+    return { width: rect.width, height: rect.height };
+}
+
+/**
+ * Precompute sector paths for better performance
+ */
+function precomputeSectorPaths(totalSectors, centerX, centerY) {
+    sectorPaths = [];
+    const angleWidth = (Math.PI * 2) / totalSectors;
+    const innerRadius = STADIUM_RADIUS - SECTOR_HEIGHT;
+    const outerRadius = STADIUM_RADIUS;
+    
+    for (let i = 0; i < totalSectors; i++) {
+        const angle = (i / totalSectors) * Math.PI * 2 - Math.PI / 2;
+        const startAngle = angle - angleWidth / 2;
+        const endAngle = angle + angleWidth / 2;
+        
+        const path = new Path2D();
+        path.arc(centerX, centerY, outerRadius, startAngle, endAngle);
+        path.arc(centerX, centerY, innerRadius, endAngle, startAngle, true);
+        path.closePath();
+        
+        sectorPaths[i] = {
+            path,
+            angle,
+            startAngle,
+            endAngle,
+            innerRadius,
+            outerRadius,
+            textX: centerX + Math.cos(angle) * ((innerRadius + outerRadius) / 2),
+            textY: centerY + Math.sin(angle) * ((innerRadius + outerRadius) / 2)
+        };
+    }
+}
+
+/**
+ * Setup canvas with high-DPI support and performance optimizations
  */
 function setupCanvas() {
     canvas = document.getElementById('game-canvas');
     ctx = canvas.getContext('2d');
     
-    // Set canvas size
     const container = document.getElementById('game-container');
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+    
+    // Initial setup
+    const dimensions = setupHighDPICanvas(canvas, ctx, container);
+    precomputeSectorPaths(16, dimensions.width / 2, dimensions.height / 2);
+    
+    // Setup offscreen canvas for performance
+    offscreenCanvas = document.createElement('canvas');
+    offscreenCtx = offscreenCanvas.getContext('2d');
+    
+    // Debounced resize handler
+    const debouncedResize = debounce(() => {
+        const newDimensions = setupHighDPICanvas(canvas, ctx, container);
+        precomputeSectorPaths(gameState ? gameState.sectors.length : 16, 
+                            newDimensions.width / 2, newDimensions.height / 2);
+        
+        // Update offscreen canvas size
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        offscreenCanvas.width = newDimensions.width * devicePixelRatio;
+        offscreenCanvas.height = newDimensions.height * devicePixelRatio;
+        offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
+    }, 150);
     
     // Handle resize
-    window.addEventListener('resize', () => {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
-    });
+    window.addEventListener('resize', debouncedResize);
 }
 
 /**
- * Get sector position and dimensions
+ * Get sector position and dimensions (optimized with precomputed values)
  */
 function getSectorGeometry(sectorId, totalSectors) {
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    if (sectorPaths[sectorId]) {
+        return sectorPaths[sectorId];
+    }
+    
+    // Fallback for dynamic calculations
+    const centerX = canvas.width / (2 * (window.devicePixelRatio || 1));
+    const centerY = canvas.height / (2 * (window.devicePixelRatio || 1));
     const angle = (sectorId / totalSectors) * Math.PI * 2 - Math.PI / 2;
     
     return {
@@ -244,7 +341,9 @@ function getSectorGeometry(sectorId, totalSectors) {
         centerX,
         centerY,
         innerRadius: STADIUM_RADIUS - SECTOR_HEIGHT,
-        outerRadius: STADIUM_RADIUS
+        outerRadius: STADIUM_RADIUS,
+        textX: centerX + Math.cos(angle) * ((STADIUM_RADIUS - SECTOR_HEIGHT + STADIUM_RADIUS) / 2),
+        textY: centerY + Math.sin(angle) * ((STADIUM_RADIUS - SECTOR_HEIGHT + STADIUM_RADIUS) / 2)
     };
 }
 
@@ -270,37 +369,49 @@ function getSectorColor(sector) {
 }
 
 /**
- * Draw crowd sector
+ * Draw crowd sector (optimized with precomputed paths)
  */
 function drawSector(sector, index, totalSectors) {
     const geom = getSectorGeometry(index, totalSectors);
-    const angleWidth = (Math.PI * 2) / totalSectors;
-    const startAngle = geom.angle - angleWidth / 2;
-    const endAngle = geom.angle + angleWidth / 2;
     
-    // Draw sector arc
-    ctx.beginPath();
-    ctx.arc(geom.centerX, geom.centerY, geom.outerRadius, startAngle, endAngle);
-    ctx.arc(geom.centerX, geom.centerY, geom.innerRadius, endAngle, startAngle, true);
-    ctx.closePath();
-    
-    const color = getSectorColor(sector);
-    ctx.fillStyle = color;
-    ctx.fill();
-    
-    // Border
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // Use precomputed path if available
+    if (geom.path) {
+        ctx.fillStyle = getSectorColor(sector);
+        ctx.fill(geom.path);
+        
+        // Border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke(geom.path);
+    } else {
+        // Fallback to manual drawing
+        const angleWidth = (Math.PI * 2) / totalSectors;
+        const startAngle = geom.angle - angleWidth / 2;
+        const endAngle = geom.angle + angleWidth / 2;
+        
+        ctx.beginPath();
+        ctx.arc(geom.centerX, geom.centerY, geom.outerRadius, startAngle, endAngle);
+        ctx.arc(geom.centerX, geom.centerY, geom.innerRadius, endAngle, startAngle, true);
+        ctx.closePath();
+        
+        ctx.fillStyle = getSectorColor(sector);
+        ctx.fill();
+        
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
     
     // Draw standing animation
     if (sector.state === 'standing' || sector.state === 'anticipating') {
         const heightMultiplier = sector.state === 'standing' ? 1.5 : 1.2;
         const extendedRadius = geom.outerRadius + SECTOR_HEIGHT * (heightMultiplier - 1);
+        const centerX = geom.centerX || (canvas.width / (2 * (window.devicePixelRatio || 1)));
+        const centerY = geom.centerY || (canvas.height / (2 * (window.devicePixelRatio || 1)));
         
         ctx.beginPath();
-        ctx.arc(geom.centerX, geom.centerY, extendedRadius, startAngle, endAngle);
-        ctx.arc(geom.centerX, geom.centerY, geom.outerRadius, endAngle, startAngle, true);
+        ctx.arc(centerX, centerY, extendedRadius, geom.startAngle, geom.endAngle);
+        ctx.arc(centerX, centerY, geom.outerRadius, geom.endAngle, geom.startAngle, true);
         ctx.closePath();
         
         ctx.fillStyle = sector.state === 'standing' 
@@ -309,11 +420,9 @@ function drawSector(sector, index, totalSectors) {
         ctx.fill();
     }
     
-    // Draw sector number
-    const textAngle = geom.angle;
-    const textRadius = (geom.innerRadius + geom.outerRadius) / 2;
-    const textX = geom.centerX + Math.cos(textAngle) * textRadius;
-    const textY = geom.centerY + Math.sin(textAngle) * textRadius;
+    // Draw sector number (use precomputed text position)
+    const textX = geom.textX;
+    const textY = geom.textY;
     
     ctx.fillStyle = 'white';
     ctx.font = 'bold 16px Arial';
@@ -337,24 +446,29 @@ function drawSector(sector, index, totalSectors) {
 }
 
 /**
- * Draw stadium field
+ * Draw stadium field (cached gradients for better performance)
  */
+let fieldGradient = null;
+
 function drawField() {
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const centerX = canvas.width / (2 * devicePixelRatio);
+    const centerY = canvas.height / (2 * devicePixelRatio);
     const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
     
-    // Grass field
-    const gradient = ctx.createRadialGradient(
-        centerX, centerY, 0,
-        centerX, centerY, fieldRadius
-    );
-    gradient.addColorStop(0, '#2d5016');
-    gradient.addColorStop(1, '#1a3d0a');
+    // Create gradient once and reuse
+    if (!fieldGradient) {
+        fieldGradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, fieldRadius
+        );
+        fieldGradient.addColorStop(0, '#2d5016');
+        fieldGradient.addColorStop(1, '#1a3d0a');
+    }
     
     ctx.beginPath();
     ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
+    ctx.fillStyle = fieldGradient;
     ctx.fill();
     
     // Field lines
@@ -374,20 +488,30 @@ function drawField() {
 }
 
 /**
- * Render game frame
+ * Render game frame (optimized for high-DPI and performance)
  */
 function render() {
     if (!gameState) return;
     
-    // Clear canvas
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const canvasWidth = canvas.width / devicePixelRatio;
+    const canvasHeight = canvas.height / devicePixelRatio;
+    
+    // Clear canvas with proper dimensions
     ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     
     // Draw field
     drawField();
     
-    // Draw all sectors
+    // Draw all sectors (batch operations for better performance)
     const sectors = gameState.sectors;
+    
+    // Update precomputed paths if sector count changed
+    if (sectorPaths.length !== sectors.length) {
+        precomputeSectorPaths(sectors.length, canvasWidth / 2, canvasHeight / 2);
+    }
+    
     sectors.forEach((sector, index) => {
         drawSector(sector, index, sectors.length);
     });
@@ -453,13 +577,14 @@ function stopGameLoop() {
 }
 
 /**
- * Get sector at mouse position
+ * Get sector at mouse position (adjusted for high-DPI)
  */
 function getSectorAtPosition(x, y) {
     if (!gameState) return -1;
     
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const centerX = (canvas.width / devicePixelRatio) / 2;
+    const centerY = (canvas.height / devicePixelRatio) / 2;
     
     const dx = x - centerX;
     const dy = y - centerY;
