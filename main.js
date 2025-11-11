@@ -661,6 +661,7 @@ function setupInputHandlers() {
  */
 function startGame() {
     document.getElementById('tutorial').classList.add('hidden');
+    document.getElementById('game-title').classList.remove('hidden');
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('controls').classList.remove('hidden');
     
