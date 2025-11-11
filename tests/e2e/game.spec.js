@@ -61,4 +61,20 @@ test.describe('Stadium Wave Game', () => {
     await expect(score).toBeVisible();
     await expect(combo).toBeVisible();
   });
+
+  test('should display game title after starting', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#start-btn', { timeout: 30000 });
+    
+    // Title should be hidden initially
+    const gameTitle = page.locator('#game-title');
+    await expect(gameTitle).toHaveClass(/hidden/);
+    
+    // Click start button
+    await page.click('#start-btn');
+    
+    // Title should now be visible
+    await expect(gameTitle).toBeVisible();
+    await expect(gameTitle).toContainText('Fan Wave');
+  });
 });
