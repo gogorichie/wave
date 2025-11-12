@@ -8,6 +8,45 @@ from typing import List, Dict, Optional
 import json
 
 
+class StadiumVenue(Enum):
+    """Available stadium venues with different characteristics"""
+    BASEBALL = "baseball"
+    SOCCER = "soccer"
+    CRICKET = "cricket"
+
+
+# Venue configurations defining difficulty and characteristics
+VENUE_CONFIGS = {
+    StadiumVenue.BASEBALL: {
+        'name': 'Baseball Stadium',
+        'description': 'Classic American ballpark - Easy difficulty',
+        'num_sectors': 16,
+        'wave_speed': 0.35,  # Slower = easier
+        'energy_drain': 0.15,  # Lower = easier
+        'base_enthusiasm': 0.75,  # Higher = easier
+        'difficulty': 'Easy'
+    },
+    StadiumVenue.SOCCER: {
+        'name': 'Soccer Stadium',
+        'description': 'International football arena - Medium difficulty',
+        'num_sectors': 20,
+        'wave_speed': 0.3,
+        'energy_drain': 0.2,
+        'base_enthusiasm': 0.70,
+        'difficulty': 'Medium'
+    },
+    StadiumVenue.CRICKET: {
+        'name': 'Cricket Ground',
+        'description': 'Traditional cricket oval - Hard difficulty',
+        'num_sectors': 24,
+        'wave_speed': 0.25,  # Faster = harder
+        'energy_drain': 0.25,  # Higher = harder
+        'base_enthusiasm': 0.65,  # Lower = harder
+        'difficulty': 'Hard'
+    }
+}
+
+
 class SectorState(Enum):
     """States for individual crowd sectors"""
     IDLE = "idle"
@@ -19,15 +58,17 @@ class SectorState(Enum):
 class CrowdSector:
     """Represents a section of the stadium crowd"""
     
-    def __init__(self, sector_id: int, size: int = 100):
+    def __init__(self, sector_id: int, size: int = 100, base_enthusiasm: float = 0.70):
         self.sector_id = sector_id
         self.size = size
         self.state = SectorState.IDLE
         self.energy = 0.5  # 0.0 to 1.0
         self.fatigue = 0.0  # 0.0 to 1.0
-        self.enthusiasm = random.uniform(0.6, 0.9)
+        # Enthusiasm varies around the base enthusiasm level for the venue
+        self.enthusiasm = random.uniform(base_enthusiasm - 0.15, base_enthusiasm + 0.15)
         self.distractions = 0.0
         self.timer = 0
+        self.energy_drain = 0.2  # How much energy is drained when standing
         
     def update(self, dt: float):
         """Update sector state over time"""
@@ -69,7 +110,7 @@ class CrowdSector:
         if self.state == SectorState.ANTICIPATING:
             self.state = SectorState.STANDING
             self.timer = 0
-            self.energy = max(0, self.energy - 0.2)
+            self.energy = max(0, self.energy - self.energy_drain)
             self.fatigue = min(1.0, self.fatigue + 0.1)
             return True
         return False
@@ -103,12 +144,33 @@ class CrowdSector:
 class WaveGame:
     """Main game state manager"""
     
-    def __init__(self, num_sectors: int = 16):
-        self.num_sectors = num_sectors
-        self.sectors: List[CrowdSector] = [
-            CrowdSector(i, size=random.randint(80, 120))
-            for i in range(num_sectors)
-        ]
+    def __init__(self, num_sectors: Optional[int] = None, venue: Optional[StadiumVenue] = None):
+        # Support backward compatibility with num_sectors parameter
+        if venue is None and num_sectors is not None:
+            # Old API: custom sector count, use default venue settings
+            self.venue = StadiumVenue.BASEBALL
+            self.venue_config = VENUE_CONFIGS[self.venue].copy()
+            self.venue_config['num_sectors'] = num_sectors  # Override with custom count
+        elif venue is not None:
+            # New API: venue-based initialization
+            self.venue = venue
+            self.venue_config = VENUE_CONFIGS[venue]
+        else:
+            # Default: Baseball stadium
+            self.venue = StadiumVenue.BASEBALL
+            self.venue_config = VENUE_CONFIGS[self.venue]
+        
+        self.num_sectors = self.venue_config['num_sectors']
+        
+        # Create sectors with venue-specific characteristics
+        base_enthusiasm = self.venue_config['base_enthusiasm']
+        energy_drain = self.venue_config['energy_drain']
+        self.sectors: List[CrowdSector] = []
+        for i in range(self.num_sectors):
+            sector = CrowdSector(i, size=random.randint(80, 120), base_enthusiasm=base_enthusiasm)
+            sector.energy_drain = energy_drain
+            self.sectors.append(sector)
+        
         self.score = 0
         self.combo = 0
         self.max_combo = 0
@@ -118,7 +180,7 @@ class WaveGame:
         self.time_elapsed = 0.0
         self.successful_waves = 0
         self.failed_waves = 0
-        self.wave_speed = 0.3  # seconds between sectors
+        self.wave_speed = self.venue_config['wave_speed']
         self.wave_timer = 0.0
         self.events = []
         self.stadium_level = 1
@@ -248,13 +310,17 @@ class WaveGame:
             'successful_waves': self.successful_waves,
             'failed_waves': self.failed_waves,
             'stadium_level': self.stadium_level,
-            'time_elapsed': self.time_elapsed
+            'time_elapsed': self.time_elapsed,
+            'venue': self.venue.value,
+            'venue_name': self.venue_config['name'],
+            'venue_difficulty': self.venue_config['difficulty']
         }
     
     def save_state(self) -> str:
         """Serialize game state to JSON"""
         state = self.get_state()
         state['unlocks'] = self.unlocks
+        state['venue'] = self.venue.value
         return json.dumps(state)
     
     def load_state(self, json_str: str):
@@ -265,17 +331,43 @@ class WaveGame:
         self.successful_waves = state.get('successful_waves', 0)
         self.stadium_level = state.get('stadium_level', 1)
         self.unlocks = state.get('unlocks', [])
+        # Note: venue cannot be changed after initialization
 
 
 # Global game instance for Pyodide
 game = WaveGame()
 
 
-def init_game(num_sectors: int = 16) -> str:
-    """Initialize new game"""
+def init_game(venue_or_sectors = 'baseball') -> str:
+    """Initialize new game with specified venue or custom sector count"""
     global game
-    game = WaveGame(num_sectors)
-    return json.dumps({'status': 'initialized', 'sectors': num_sectors})
+    
+    # Support both old API (int sectors) and new API (venue string)
+    if isinstance(venue_or_sectors, int):
+        # Old API: custom sector count
+        game = WaveGame(num_sectors=venue_or_sectors)
+        return json.dumps({
+            'status': 'initialized',
+            'sectors': game.num_sectors,
+            'venue': game.venue.value,
+            'venue_name': game.venue_config['name'],
+            'difficulty': game.venue_config['difficulty']
+        })
+    else:
+        # New API: venue string
+        try:
+            venue_enum = StadiumVenue(venue_or_sectors.lower())
+        except (ValueError, AttributeError):
+            venue_enum = StadiumVenue.BASEBALL
+        
+        game = WaveGame(venue=venue_enum)
+        return json.dumps({
+            'status': 'initialized',
+            'sectors': game.num_sectors,
+            'venue': game.venue.value,
+            'venue_name': game.venue_config['name'],
+            'difficulty': game.venue_config['difficulty']
+        })
 
 
 def update_game(dt: float) -> str:

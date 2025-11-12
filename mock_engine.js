@@ -3,6 +3,44 @@
  * Provides the same API as the Python engine but runs in pure JavaScript
  */
 
+// Stadium venue types
+const StadiumVenue = {
+    BASEBALL: "baseball",
+    SOCCER: "soccer",
+    CRICKET: "cricket"
+};
+
+// Venue configurations defining difficulty and characteristics
+const VENUE_CONFIGS = {
+    [StadiumVenue.BASEBALL]: {
+        name: 'Baseball Stadium',
+        description: 'Classic American ballpark - Easy difficulty',
+        num_sectors: 16,
+        wave_speed: 0.35,
+        energy_drain: 0.15,
+        base_enthusiasm: 0.75,
+        difficulty: 'Easy'
+    },
+    [StadiumVenue.SOCCER]: {
+        name: 'Soccer Stadium',
+        description: 'International football arena - Medium difficulty',
+        num_sectors: 20,
+        wave_speed: 0.3,
+        energy_drain: 0.2,
+        base_enthusiasm: 0.70,
+        difficulty: 'Medium'
+    },
+    [StadiumVenue.CRICKET]: {
+        name: 'Cricket Ground',
+        description: 'Traditional cricket oval - Hard difficulty',
+        num_sectors: 24,
+        wave_speed: 0.25,
+        energy_drain: 0.25,
+        base_enthusiasm: 0.65,
+        difficulty: 'Hard'
+    }
+};
+
 class MockSectorState {
     static IDLE = "idle";
     static ANTICIPATING = "anticipating";
@@ -11,15 +49,16 @@ class MockSectorState {
 }
 
 class MockCrowdSector {
-    constructor(sectorId, size = 100) {
+    constructor(sectorId, size = 100, baseEnthusiasm = 0.70) {
         this.sector_id = sectorId;
         this.size = size;
         this.state = MockSectorState.IDLE;
         this.energy = 0.5;
         this.fatigue = 0.0;
-        this.enthusiasm = Math.random() * 0.3 + 0.6;
+        this.enthusiasm = Math.random() * 0.3 + (baseEnthusiasm - 0.15);
         this.distractions = 0.0;
         this.timer = 0;
+        this.energy_drain = 0.2;
     }
 
     update(dt) {
@@ -64,7 +103,7 @@ class MockCrowdSector {
         if (this.state === MockSectorState.ANTICIPATING) {
             this.state = MockSectorState.STANDING;
             this.timer = 0;
-            this.energy = Math.max(0, this.energy - 0.2);
+            this.energy = Math.max(0, this.energy - this.energy_drain);
             this.fatigue = Math.min(1.0, this.fatigue + 0.1);
             return true;
         }
@@ -94,12 +133,21 @@ class MockCrowdSector {
 }
 
 class MockWaveGame {
-    constructor(num_sectors = 16) {
-        this.num_sectors = num_sectors;
+    constructor(venue = StadiumVenue.BASEBALL) {
+        this.venue = venue;
+        this.venue_config = VENUE_CONFIGS[venue];
+        this.num_sectors = this.venue_config.num_sectors;
+        
+        // Create sectors with venue-specific characteristics
+        const baseEnthusiasm = this.venue_config.base_enthusiasm;
+        const energyDrain = this.venue_config.energy_drain;
         this.sectors = [];
-        for (let i = 0; i < num_sectors; i++) {
-            this.sectors.push(new MockCrowdSector(i, Math.floor(Math.random() * 40) + 80));
+        for (let i = 0; i < this.num_sectors; i++) {
+            const sector = new MockCrowdSector(i, Math.floor(Math.random() * 40) + 80, baseEnthusiasm);
+            sector.energy_drain = energyDrain;
+            this.sectors.push(sector);
         }
+        
         this.score = 0;
         this.combo = 0;
         this.max_combo = 0;
@@ -109,7 +157,7 @@ class MockWaveGame {
         this.time_elapsed = 0.0;
         this.successful_waves = 0;
         this.failed_waves = 0;
-        this.wave_speed = 0.3;
+        this.wave_speed = this.venue_config.wave_speed;
         this.wave_timer = 0.0;
         this.events = [];
         this.stadium_level = 1;
@@ -221,13 +269,17 @@ class MockWaveGame {
             successful_waves: this.successful_waves,
             failed_waves: this.failed_waves,
             stadium_level: this.stadium_level,
-            time_elapsed: this.time_elapsed
+            time_elapsed: this.time_elapsed,
+            venue: this.venue,
+            venue_name: this.venue_config.name,
+            venue_difficulty: this.venue_config.difficulty
         };
     }
 
     save_state() {
         const state = this.get_state();
         state.unlocks = this.unlocks;
+        state.venue = this.venue;
         return JSON.stringify(state);
     }
 
@@ -238,6 +290,7 @@ class MockWaveGame {
         this.successful_waves = state.successful_waves || 0;
         this.stadium_level = state.stadium_level || 1;
         this.unlocks = state.unlocks || [];
+        // Note: venue cannot be changed after initialization
     }
 }
 
@@ -245,9 +298,18 @@ class MockWaveGame {
 export const mockGameAPI = {
     game: null,
     
-    init_game(num_sectors = 16) {
-        this.game = new MockWaveGame(num_sectors);
-        return JSON.stringify({ status: 'initialized', sectors: num_sectors });
+    init_game(venue = 'baseball') {
+        const venueKey = venue.toLowerCase();
+        const venueEnum = StadiumVenue[venueKey.toUpperCase()] || StadiumVenue.BASEBALL;
+        this.game = new MockWaveGame(venueEnum);
+        return JSON.stringify({
+            status: 'initialized',
+            sectors: this.game.num_sectors,
+            venue: this.game.venue,
+            venue_name: this.game.venue_config.name,
+            difficulty: this.game.venue_config.difficulty
+        });
+    },
     },
     
     update_game(dt) {

@@ -14,6 +14,7 @@ let gameState = null;
 let lastTime = 0;
 let animationId = null;
 let isGameRunning = false;
+let selectedVenue = 'baseball';  // Default venue
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -58,15 +59,21 @@ async function initPyodide() {
 /**
  * Initialize game with Python
  */
-function initGame() {
+function initGame(venue = 'baseball') {
     try {
         let result;
         if (useMockEngine) {
-            result = mockGameAPI.init_game(16);
+            result = mockGameAPI.init_game(venue);
         } else {
-            result = pyodide.runPython(`init_game(16)`);
+            pyodide.globals.set('venue_param', venue);
+            result = pyodide.runPython(`init_game(venue_param)`);
         }
         console.log('Game initialized:', result);
+        const initData = JSON.parse(result);
+        
+        // Update venue info display
+        updateVenueDisplay(initData);
+        
         return true;
     } catch (error) {
         console.error('Failed to initialize game:', error);
@@ -555,6 +562,21 @@ function gameLoop(timestamp) {
 }
 
 /**
+ * Update venue info display
+ */
+function updateVenueDisplay(initData) {
+    const venueInfo = document.getElementById('venue-info');
+    if (venueInfo && initData.venue_name) {
+        let difficultyClass = 'difficulty-easy';
+        if (initData.difficulty === 'Medium') difficultyClass = 'difficulty-medium';
+        if (initData.difficulty === 'Hard') difficultyClass = 'difficulty-hard';
+        
+        venueInfo.innerHTML = `${initData.venue_name} <span class="difficulty-badge ${difficultyClass}">${initData.difficulty}</span>`;
+        venueInfo.classList.remove('hidden');
+    }
+}
+
+/**
  * Start game loop
  */
 function startGameLoop() {
@@ -665,7 +687,7 @@ function startGame() {
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('controls').classList.remove('hidden');
     
-    initGame();
+    initGame(selectedVenue);
     startGameLoop();
 }
 
@@ -697,6 +719,16 @@ async function main() {
         
         // Setup start button
         document.getElementById('start-btn').addEventListener('click', startGame);
+        
+        // Setup venue selection
+        const venueOptions = document.querySelectorAll('.venue-option');
+        venueOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                venueOptions.forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                selectedVenue = this.dataset.venue;
+            });
+        });
         
         console.log('Game ready!');
     } else {
