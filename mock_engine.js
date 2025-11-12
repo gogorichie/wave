@@ -300,7 +300,10 @@ export const mockGameAPI = {
     
     init_game(venue = 'baseball') {
         const venueKey = venue.toLowerCase();
-        const venueEnum = StadiumVenue[venueKey.toUpperCase()] || StadiumVenue.BASEBALL;
+        const venueEnum = StadiumVenue[venueKey.toUpperCase()];
+        if (!venueEnum) {
+            throw new Error("Invalid venue: " + venue);
+        }
         this.game = new MockWaveGame(venueEnum);
         return JSON.stringify({
             status: 'initialized',
