@@ -310,7 +310,6 @@ export const mockGameAPI = {
             difficulty: this.game.venue_config.difficulty
         });
     },
-    },
     
     update_game(dt) {
         this.game.update(dt);
