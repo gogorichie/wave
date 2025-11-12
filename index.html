@@ -83,6 +83,43 @@
             letter-spacing: 2px;
         }
 
+        #venue-info {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.2em;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+            pointer-events: none;
+            text-align: center;
+        }
+
+        .difficulty-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .difficulty-easy {
+            background: #4ade80;
+            color: #000;
+        }
+
+        .difficulty-medium {
+            background: #fbbf24;
+            color: #000;
+        }
+
+        .difficulty-hard {
+            background: #f87171;
+            color: #000;
+        }
+
         #hud {
             position: absolute;
             top: 100px;
@@ -189,6 +226,51 @@
             border-radius: 25px;
             cursor: pointer;
             margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        #tutorial button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .venue-selector {
+            margin: 25px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .venue-option {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: left;
+        }
+
+        .venue-option:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .venue-option.selected {
+            background: rgba(102, 126, 234, 0.4);
+            border-color: #667eea;
+        }
+
+        .venue-option h3 {
+            margin: 0 0 5px 0;
+            font-size: 1.2em;
+        }
+
+        .venue-option p {
+            margin: 0;
+            font-size: 0.9em;
+            color: #ddd;
         }
 
         .hidden {
@@ -234,6 +316,8 @@
         
         <div id="game-title" class="hidden">Fan Wave</div>
         
+        <div id="venue-info" class="hidden"></div>
+        
         <div id="loading">
             <h2>Loading Python Game Engine...</h2>
             <div class="spinner"></div>
@@ -265,7 +349,22 @@
 
         <div id="tutorial">
             <h2>🌊 Stadium Wave Game</h2>
-            <p>Click on any crowd sector to start the wave!</p>
+            <p><strong>Choose Your Venue:</strong></p>
+            <div class="venue-selector">
+                <div class="venue-option selected" data-venue="baseball">
+                    <h3>⚾ Baseball Stadium <span class="difficulty-badge difficulty-easy">Easy</span></h3>
+                    <p>Classic American ballpark with 16 sectors</p>
+                </div>
+                <div class="venue-option" data-venue="soccer">
+                    <h3>⚽ Soccer Stadium <span class="difficulty-badge difficulty-medium">Medium</span></h3>
+                    <p>International football arena with 20 sectors</p>
+                </div>
+                <div class="venue-option" data-venue="cricket">
+                    <h3>🏏 Cricket Ground <span class="difficulty-badge difficulty-hard">Hard</span></h3>
+                    <p>Traditional cricket oval with 24 sectors</p>
+                </div>
+            </div>
+            <p style="margin-top: 20px;">Click on any crowd sector to start the wave!</p>
             <p>Keep the energy high and the combo going.</p>
             <p>⚡ <strong>Right-click</strong> sectors to boost their energy.</p>
             <p>⌨️ <strong>Spacebar</strong> starts wave at sector 0.</p>

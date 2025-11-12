@@ -239,3 +239,78 @@ class TestGameAPI:
         result = load_game(save_data)
         data = json.loads(result)
         assert data['status'] == 'loaded'
+
+
+class TestVenueSystem:
+    """Test venue-based gameplay"""
+    
+    def test_venue_initialization(self):
+        """Test different venues initialize correctly"""
+        from game_engine import StadiumVenue, WaveGame
+        
+        # Baseball (easy)
+        baseball = WaveGame(venue=StadiumVenue.BASEBALL)
+        assert baseball.num_sectors == 16
+        assert baseball.wave_speed == 0.35
+        assert baseball.venue == StadiumVenue.BASEBALL
+        
+        # Soccer (medium)
+        soccer = WaveGame(venue=StadiumVenue.SOCCER)
+        assert soccer.num_sectors == 20
+        assert soccer.wave_speed == 0.3
+        assert soccer.venue == StadiumVenue.SOCCER
+        
+        # Cricket (hard)
+        cricket = WaveGame(venue=StadiumVenue.CRICKET)
+        assert cricket.num_sectors == 24
+        assert cricket.wave_speed == 0.25
+        assert cricket.venue == StadiumVenue.CRICKET
+        
+    def test_venue_difficulty_affects_gameplay(self):
+        """Test that different venues have different difficulty characteristics"""
+        from game_engine import StadiumVenue, WaveGame
+        
+        baseball = WaveGame(venue=StadiumVenue.BASEBALL)
+        cricket = WaveGame(venue=StadiumVenue.CRICKET)
+        
+        # Cricket should be harder (more sectors, faster wave, higher energy drain)
+        assert cricket.num_sectors > baseball.num_sectors
+        assert cricket.wave_speed < baseball.wave_speed  # Faster = smaller number
+        assert cricket.sectors[0].energy_drain > baseball.sectors[0].energy_drain
+        
+    def test_venue_api_init(self):
+        """Test init_game API function with venues"""
+        from game_engine import init_game
+        
+        # Test baseball venue
+        result = init_game('baseball')
+        data = json.loads(result)
+        assert data['status'] == 'initialized'
+        assert data['venue'] == 'baseball'
+        assert data['sectors'] == 16
+        
+        # Test soccer venue
+        result = init_game('soccer')
+        data = json.loads(result)
+        assert data['venue'] == 'soccer'
+        assert data['sectors'] == 20
+        
+        # Test cricket venue
+        result = init_game('cricket')
+        data = json.loads(result)
+        assert data['venue'] == 'cricket'
+        assert data['sectors'] == 24
+        
+    def test_venue_state_includes_info(self):
+        """Test that game state includes venue information"""
+        from game_engine import StadiumVenue, WaveGame
+        
+        game = WaveGame(venue=StadiumVenue.SOCCER)
+        state = game.get_state()
+        
+        assert 'venue' in state
+        assert 'venue_name' in state
+        assert 'venue_difficulty' in state
+        assert state['venue'] == 'soccer'
+        assert state['venue_name'] == 'Soccer Stadium'
+        assert state['venue_difficulty'] == 'Medium'
