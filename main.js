@@ -26,6 +26,10 @@ let offscreenCanvas = null;
 let offscreenCtx = null;
 let resizeTimeout = null;
 
+// Cached field gradients keyed by venue
+let fieldGradients = {};
+let lastDrawnVenue = null;
+
 /**
  * Initialize Pyodide and load Python game engine
  */
@@ -316,7 +320,8 @@ function setupCanvas() {
     // Debounced resize handler
     const debouncedResize = debounce(() => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
-        precomputeSectorPaths(gameState ? gameState.sectors.length : 16, 
+        resetFieldGradients();
+        precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
         
         // Update offscreen canvas size
@@ -452,46 +457,202 @@ function drawSector(sector, index, totalSectors) {
     }
 }
 
-/**
- * Draw stadium field (cached gradients for better performance)
- */
-let fieldGradient = null;
+function resetFieldGradients() {
+    fieldGradients = {};
+}
+
+function getFieldGradient(venue, centerX, centerY, fieldRadius) {
+    const key = `${venue}-${Math.round(centerX)}-${Math.round(centerY)}-${Math.round(fieldRadius)}`;
+    if (!fieldGradients[key]) {
+        const gradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, fieldRadius
+        );
+
+        if (venue === 'baseball') {
+            gradient.addColorStop(0, '#3c7a2f');
+            gradient.addColorStop(1, '#1f4516');
+        } else if (venue === 'soccer') {
+            gradient.addColorStop(0, '#2d5016');
+            gradient.addColorStop(1, '#1a3d0a');
+        } else {
+            gradient.addColorStop(0, '#2a4920');
+            gradient.addColorStop(1, '#153111');
+        }
+
+        fieldGradients[key] = gradient;
+    }
+    return fieldGradients[key];
+}
+
+function drawSoccerField(centerX, centerY, fieldRadius) {
+    const gradient = getFieldGradient('soccer', centerX, centerY, fieldRadius);
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+
+    // Outer boundary circle
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center circle and line
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - fieldRadius * 0.95);
+    ctx.lineTo(centerX, centerY + fieldRadius * 0.95);
+    ctx.stroke();
+
+    // Penalty boxes
+    const boxWidth = fieldRadius * 1.3;
+    const boxDepth = fieldRadius * 0.35;
+    ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius * 0.95 - boxDepth, boxWidth, boxDepth);
+    ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius * 0.95, boxWidth, boxDepth);
+
+    // Goal boxes
+    const goalWidth = fieldRadius * 0.8;
+    const goalDepth = fieldRadius * 0.18;
+    ctx.strokeRect(centerX - goalWidth / 2, centerY - fieldRadius * 0.95 - goalDepth, goalWidth, goalDepth);
+    ctx.strokeRect(centerX - goalWidth / 2, centerY + fieldRadius * 0.95, goalWidth, goalDepth);
+
+    // Penalty arcs
+    const penaltyRadius = fieldRadius * 0.3;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY - fieldRadius * 0.6, penaltyRadius, Math.PI * 0.8, Math.PI * 0.2, true);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY + fieldRadius * 0.6, penaltyRadius, Math.PI * 1.2, Math.PI * 1.8, true);
+    ctx.stroke();
+}
+
+function drawBaseballField(centerX, centerY, fieldRadius) {
+    const gradient = getFieldGradient('baseball', centerX, centerY, fieldRadius);
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Warning track / outfield wall
+    ctx.strokeStyle = 'rgba(20, 45, 18, 0.7)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.98, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+
+    // Infield grass circle
+    const infieldGrassRadius = fieldRadius * 0.55;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, infieldGrassRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#3f8a32';
+    ctx.fill();
+
+    // Infield dirt diamond
+    const diamondRadius = fieldRadius * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - diamondRadius);
+    ctx.lineTo(centerX + diamondRadius, centerY);
+    ctx.lineTo(centerX, centerY + diamondRadius);
+    ctx.lineTo(centerX - diamondRadius, centerY);
+    ctx.closePath();
+    ctx.fillStyle = '#c68642';
+    ctx.fill();
+
+    // Base paths
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY + diamondRadius);
+    ctx.lineTo(centerX + diamondRadius, centerY);
+    ctx.lineTo(centerX, centerY - diamondRadius);
+    ctx.lineTo(centerX - diamondRadius, centerY);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Bases
+    const baseSize = fieldRadius * 0.06;
+    const basePositions = [
+        { x: centerX, y: centerY + diamondRadius }, // Home
+        { x: centerX + diamondRadius, y: centerY }, // First
+        { x: centerX, y: centerY - diamondRadius }, // Second
+        { x: centerX - diamondRadius, y: centerY }  // Third
+    ];
+
+    basePositions.forEach((pos, index) => {
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = index === 0 ? '#ffffff' : '#f8f8f8';
+        ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+        ctx.restore();
+    });
+
+    // Pitcher's mound
+    const moundRadius = fieldRadius * 0.08;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, moundRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#d5a273';
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, moundRadius * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Foul lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY + diamondRadius);
+    ctx.lineTo(centerX + fieldRadius * 0.9, centerY + fieldRadius * 0.9);
+    ctx.moveTo(centerX, centerY + diamondRadius);
+    ctx.lineTo(centerX - fieldRadius * 0.9, centerY + fieldRadius * 0.9);
+    ctx.stroke();
+
+    // Home plate detail
+    ctx.save();
+    ctx.translate(centerX, centerY + diamondRadius);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(0, -baseSize / 2);
+    ctx.lineTo(baseSize / 2, 0);
+    ctx.lineTo(0, baseSize / 2);
+    ctx.lineTo(-baseSize / 2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
 
 function drawField() {
+    if (!gameState) return;
+
     const devicePixelRatio = window.devicePixelRatio || 1;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
     const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
-    
-    // Create gradient once and reuse
-    if (!fieldGradient) {
-        fieldGradient = ctx.createRadialGradient(
-            centerX, centerY, 0,
-            centerX, centerY, fieldRadius
-        );
-        fieldGradient.addColorStop(0, '#2d5016');
-        fieldGradient.addColorStop(1, '#1a3d0a');
+    const venue = (gameState.venue || 'baseball').toLowerCase();
+
+    if (lastDrawnVenue !== venue) {
+        resetFieldGradients();
+        lastDrawnVenue = venue;
     }
-    
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
-    ctx.fillStyle = fieldGradient;
-    ctx.fill();
-    
-    // Field lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 2;
-    
-    // Center circle
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Center line
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY - fieldRadius);
-    ctx.lineTo(centerX, centerY + fieldRadius);
-    ctx.stroke();
+
+    if (venue === 'baseball') {
+        drawBaseballField(centerX, centerY, fieldRadius);
+    } else if (venue === 'soccer') {
+        drawSoccerField(centerX, centerY, fieldRadius);
+    } else {
+        drawSoccerField(centerX, centerY, fieldRadius);
+    }
 }
 
 /**
