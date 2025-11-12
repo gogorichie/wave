@@ -468,7 +468,7 @@ function resetFieldGradients() {
 }
 
 function getFieldGradient(venue, centerX, centerY, fieldRadius) {
-    const key = `${venue}-${Math.round(centerX)}-${Math.round(centerY)}-${Math.round(fieldRadius)}`;
+    const key = `${venue}-${fieldRadius}`;
     if (!fieldGradients[key]) {
         const gradient = ctx.createRadialGradient(
             centerX, centerY, 0,
@@ -481,9 +481,12 @@ function getFieldGradient(venue, centerX, centerY, fieldRadius) {
         } else if (venue === 'soccer') {
             gradient.addColorStop(0, '#2d5016');
             gradient.addColorStop(1, '#1a3d0a');
-        } else {
+        } else if (venue === 'cricket') {
             gradient.addColorStop(0, '#2a4920');
             gradient.addColorStop(1, '#153111');
+        } else {
+            gradient.addColorStop(0, '#2d5016');
+            gradient.addColorStop(1, '#1a3d0a');
         }
 
         fieldGradients[key] = gradient;
@@ -638,6 +641,70 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.restore();
 }
 
+/**
+ * Draw cricket ground field
+ */
+function drawCricketField(centerX, centerY, fieldRadius) {
+    const gradient = getFieldGradient('cricket', centerX, centerY, fieldRadius);
+
+    // Draw the oval field
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Boundary rope (white)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Cricket pitch (center strip)
+    const pitchLength = fieldRadius * 0.45;
+    const pitchWidth = fieldRadius * 0.08;
+    ctx.fillStyle = '#d4af7a';
+    ctx.fillRect(centerX - pitchWidth / 2, centerY - pitchLength / 2, pitchWidth, pitchLength);
+
+    // Pitch markings (creases)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    
+    // Batting creases
+    ctx.beginPath();
+    ctx.moveTo(centerX - pitchWidth / 2, centerY - pitchLength / 2 + pitchLength * 0.1);
+    ctx.lineTo(centerX + pitchWidth / 2, centerY - pitchLength / 2 + pitchLength * 0.1);
+    ctx.moveTo(centerX - pitchWidth / 2, centerY + pitchLength / 2 - pitchLength * 0.1);
+    ctx.lineTo(centerX + pitchWidth / 2, centerY + pitchLength / 2 - pitchLength * 0.1);
+    ctx.stroke();
+
+    // Stumps (white rectangles)
+    const stumpWidth = pitchWidth * 0.15;
+    const stumpHeight = pitchWidth * 0.25;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(centerX - stumpWidth / 2, centerY - pitchLength / 2, stumpWidth, stumpHeight);
+    ctx.fillRect(centerX - stumpWidth / 2, centerY + pitchLength / 2 - stumpHeight, stumpWidth, stumpHeight);
+
+    // Inner circle (fielding restriction circle)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Wicket keeper areas (behind stumps)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY - pitchLength / 2, pitchWidth * 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY + pitchLength / 2, pitchWidth * 2, 0, Math.PI * 2);
+    ctx.stroke();
+}
+
 function drawField() {
     if (!gameState) return;
 
@@ -656,7 +723,10 @@ function drawField() {
         drawBaseballField(centerX, centerY, fieldRadius);
     } else if (venue === 'soccer') {
         drawSoccerField(centerX, centerY, fieldRadius);
+    } else if (venue === 'cricket') {
+        drawCricketField(centerX, centerY, fieldRadius);
     } else {
+        // Default fallback
         drawSoccerField(centerX, centerY, fieldRadius);
     }
 }
