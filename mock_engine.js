@@ -299,12 +299,37 @@ export const mockGameAPI = {
     game: null,
     
     init_game(venue = 'baseball') {
+        // Backward compatibility: Support old API with integer sector counts (deprecated)
+        if (typeof venue === 'number') {
+            console.warn('Passing integer sector count to init_game() is deprecated. Use init_game_with_sectors() instead.');
+            return this.init_game_with_sectors(venue);
+        }
+        
         const venueKey = venue.toLowerCase();
         const venueEnum = StadiumVenue[venueKey.toUpperCase()];
         if (!venueEnum) {
             throw new Error("Invalid venue: " + venue);
         }
         this.game = new MockWaveGame(venueEnum);
+        return JSON.stringify({
+            status: 'initialized',
+            sectors: this.game.num_sectors,
+            venue: this.game.venue,
+            venue_name: this.game.venue_config.name,
+            difficulty: this.game.venue_config.difficulty
+        });
+    },
+    
+    init_game_with_sectors(num_sectors) {
+        this.game = new MockWaveGame(StadiumVenue.BASEBALL);
+        // Override sector count for custom configurations
+        this.game.num_sectors = num_sectors;
+        this.game.sectors = [];
+        for (let i = 0; i < num_sectors; i++) {
+            const sector = new MockCrowdSector(i, Math.floor(Math.random() * 40) + 80, this.game.venue_config.base_enthusiasm);
+            sector.energy_drain = this.game.venue_config.energy_drain;
+            this.game.sectors.push(sector);
+        }
         return JSON.stringify({
             status: 'initialized',
             sectors: this.game.num_sectors,

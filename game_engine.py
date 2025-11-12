@@ -338,36 +338,68 @@ class WaveGame:
 game = WaveGame()
 
 
-def init_game(venue_or_sectors = 'baseball') -> str:
-    """Initialize new game with specified venue or custom sector count"""
+def init_game(venue: str = 'baseball') -> str:
+    """
+    Initialize new game with specified venue.
+    
+    Args:
+        venue: Stadium venue type ('baseball', 'soccer', 'cricket')
+    
+    Returns:
+        JSON string with initialization status and game metadata
+        
+    Note:
+        For backward compatibility, integer values (custom sector counts) are still
+        supported but deprecated. Use init_game_with_sectors() for custom sector counts.
+    """
     global game
     
-    # Support both old API (int sectors) and new API (venue string)
-    if isinstance(venue_or_sectors, int):
-        # Old API: custom sector count
-        game = WaveGame(num_sectors=venue_or_sectors)
-        return json.dumps({
-            'status': 'initialized',
-            'sectors': game.num_sectors,
-            'venue': game.venue.value,
-            'venue_name': game.venue_config['name'],
-            'difficulty': game.venue_config['difficulty']
-        })
-    else:
-        # New API: venue string
-        try:
-            venue_enum = StadiumVenue(venue_or_sectors.lower())
-        except (ValueError, AttributeError):
-            venue_enum = StadiumVenue.BASEBALL
-        
-        game = WaveGame(venue=venue_enum)
-        return json.dumps({
-            'status': 'initialized',
-            'sectors': game.num_sectors,
-            'venue': game.venue.value,
-            'venue_name': game.venue_config['name'],
-            'difficulty': game.venue_config['difficulty']
-        })
+    # Backward compatibility: Support old API with integer sector counts (deprecated)
+    if isinstance(venue, int):
+        import warnings
+        warnings.warn(
+            "Passing integer sector count to init_game() is deprecated. "
+            "Use init_game_with_sectors() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return init_game_with_sectors(venue)
+    
+    # New API: venue string
+    try:
+        venue_enum = StadiumVenue(venue.lower())
+    except (ValueError, AttributeError):
+        venue_enum = StadiumVenue.BASEBALL
+    
+    game = WaveGame(venue=venue_enum)
+    return json.dumps({
+        'status': 'initialized',
+        'sectors': game.num_sectors,
+        'venue': game.venue.value,
+        'venue_name': game.venue_config['name'],
+        'difficulty': game.venue_config['difficulty']
+    })
+
+
+def init_game_with_sectors(num_sectors: int) -> str:
+    """
+    Initialize new game with custom sector count (for testing/advanced usage).
+    
+    Args:
+        num_sectors: Number of stadium sectors (e.g., 8, 12, 16)
+    
+    Returns:
+        JSON string with initialization status and game metadata
+    """
+    global game
+    game = WaveGame(num_sectors=num_sectors)
+    return json.dumps({
+        'status': 'initialized',
+        'sectors': game.num_sectors,
+        'venue': game.venue.value,
+        'venue_name': game.venue_config['name'],
+        'difficulty': game.venue_config['difficulty']
+    })
 
 
 def update_game(dt: float) -> str:
