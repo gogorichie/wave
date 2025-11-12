@@ -457,6 +457,12 @@ function drawSector(sector, index, totalSectors) {
     }
 }
 
+/**
+ * Clears the cached field gradients used for stadium rendering.
+ * Call this function whenever the venue changes (e.g., switching between baseball and soccer)
+ * or when the canvas is resized. This ensures that gradients are recalculated to match
+ * the current venue and canvas dimensions, preventing visual artifacts or incorrect coloring.
+ */
 function resetFieldGradients() {
     fieldGradients = {};
 }
