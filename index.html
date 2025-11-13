@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stadium Wave Game</title>
     <style>
+        :root {
+            --vh: 1vh;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -20,6 +24,7 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            min-height: calc(var(--vh, 1vh) * 100);
         }
 
         #game-container {
@@ -27,6 +32,7 @@
             width: 90vw;
             max-width: 1200px;
             height: 90vh;
+            height: calc(var(--vh, 1vh) * 90);
             max-height: 800px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 20px;
@@ -278,6 +284,16 @@
         </div>
     </div>
 
+    <script>
+        const setViewportHeight = () => {
+            const vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+        };
+
+        setViewportHeight();
+        window.addEventListener('resize', setViewportHeight);
+        window.addEventListener('orientationchange', setViewportHeight);
+    </script>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
     <script type="module" src="/main.js"></script>
 </body>
