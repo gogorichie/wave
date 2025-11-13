@@ -1,6 +1,7 @@
 /**
  * Stadium Wave Game - Main JavaScript Entry
  * Handles Pyodide initialization, rendering, and game loop
+ * iOS Safari compatible with touch events
  */
 
 import { mockGameAPI } from './mock_engine.js';
@@ -14,6 +15,13 @@ let gameState = null;
 let lastTime = 0;
 let animationId = null;
 let isGameRunning = false;
+
+// Touch state for mobile interactions
+let touchStartTime = 0;
+let touchStartPos = { x: 0, y: 0 };
+let touchMoved = false;
+let longPressTimer = null;
+const LONG_PRESS_DURATION = 500; // milliseconds
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -237,6 +245,15 @@ function debounce(func, wait) {
 }
 
 /**
+ * Handle iOS viewport resize (address bar show/hide)
+ */
+function handleIOSResize() {
+    // iOS Safari: Update viewport height on orientation change or resize
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+}
+
+/**
  * Setup high-DPI canvas with proper scaling
  */
 function setupHighDPICanvas(canvas, ctx, container) {
@@ -317,10 +334,20 @@ function setupCanvas() {
         offscreenCanvas.width = newDimensions.width * devicePixelRatio;
         offscreenCanvas.height = newDimensions.height * devicePixelRatio;
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
+        
+        // Handle iOS viewport resize
+        handleIOSResize();
     }, 150);
     
-    // Handle resize
+    // Handle resize and orientation change
     window.addEventListener('resize', debouncedResize);
+    window.addEventListener('orientationchange', () => {
+        // iOS needs a delay after orientation change
+        setTimeout(debouncedResize, 100);
+    });
+    
+    // Initial iOS viewport setup
+    handleIOSResize();
 }
 
 /**
@@ -577,7 +604,7 @@ function stopGameLoop() {
 }
 
 /**
- * Get sector at mouse position (adjusted for high-DPI)
+ * Get sector at position (works for both mouse and touch)
  */
 function getSectorAtPosition(x, y) {
     if (!gameState) return -1;
@@ -608,10 +635,115 @@ function getSectorAtPosition(x, y) {
 }
 
 /**
- * Setup input handlers
+ * Handle touch start event
+ */
+function handleTouchStart(e) {
+    if (!isGameRunning) return;
+    
+    e.preventDefault(); // Prevent default iOS behaviors
+    
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    
+    touchStartTime = Date.now();
+    touchStartPos = { x, y };
+    touchMoved = false;
+    
+    const sectorId = getSectorAtPosition(x, y);
+    
+    // Start long press timer for boost action
+    if (sectorId >= 0) {
+        longPressTimer = setTimeout(() => {
+            boostSector(sectorId);
+            showNotification(`Sector ${sectorId} boosted!`, 'success');
+            // Haptic feedback if available
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }, LONG_PRESS_DURATION);
+    }
+}
+
+/**
+ * Handle touch move event
+ */
+function handleTouchMove(e) {
+    if (!isGameRunning) return;
+    
+    e.preventDefault(); // Prevent scrolling
+    
+    const touch = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    
+    // Check if touch moved significantly
+    const dx = x - touchStartPos.x;
+    const dy = y - touchStartPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 10) {
+        touchMoved = true;
+        // Cancel long press if touch moved
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }
+}
+
+/**
+ * Handle touch end event
+ */
+function handleTouchEnd(e) {
+    if (!isGameRunning) return;
+    
+    e.preventDefault();
+    
+    // Cancel long press timer
+    if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }
+    
+    const touchDuration = Date.now() - touchStartTime;
+    
+    // If touch was quick and didn't move, it's a tap
+    if (!touchMoved && touchDuration < LONG_PRESS_DURATION) {
+        const rect = canvas.getBoundingClientRect();
+        const x = touchStartPos.x;
+        const y = touchStartPos.y;
+        
+        const sectorId = getSectorAtPosition(x, y);
+        if (sectorId >= 0) {
+            startWave(sectorId);
+        }
+    }
+}
+
+/**
+ * Handle touch cancel event
+ */
+function handleTouchCancel(e) {
+    if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    }
+}
+
+/**
+ * Setup input handlers (mouse and touch)
  */
 function setupInputHandlers() {
-    // Click to start wave
+    // Touch events for mobile/iOS
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', handleTouchCancel, { passive: false });
+    
+    // Mouse events for desktop (still needed for non-touch devices)
     canvas.addEventListener('click', (e) => {
         if (!isGameRunning) return;
         
@@ -625,7 +757,7 @@ function setupInputHandlers() {
         }
     });
     
-    // Right-click to boost energy
+    // Right-click to boost energy (desktop only)
     canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         if (!isGameRunning) return;
@@ -641,7 +773,7 @@ function setupInputHandlers() {
         }
     });
     
-    // Keyboard controls
+    // Keyboard controls (desktop only)
     document.addEventListener('keydown', (e) => {
         if (!isGameRunning) return;
         
