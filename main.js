@@ -213,11 +213,11 @@ function formatTime(seconds) {
 /**
  * Update stats panel
  */
-function updateStats() {
+function updateStats(dt) {
     if (!isGameRunning || isPaused) return;
     
     // Update game time
-    totalGameTime += 0.016; // Approximate frame time
+    totalGameTime += dt;
     document.getElementById('game-time').textContent = formatTime(totalGameTime);
     
     // Update accuracy
