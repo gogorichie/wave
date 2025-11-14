@@ -2,6 +2,8 @@
 
 A browser-based interactive game where players orchestrate the stadium "wave" by coordinating with AI-controlled crowd sectors to achieve synchronized animations and earn combo points.
 
+![GitHub Release](https://img.shields.io/github/v/release/gogorichie/wave) ![GitHub License](https://img.shields.io/github/license/gogorichie/wave)
+
 ## Features
 
 ### Core Gameplay
