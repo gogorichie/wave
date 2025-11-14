@@ -851,9 +851,7 @@ function setupInputHandlers() {
     document.getElementById('help-toggle').addEventListener('click', toggleHelp);
     document.getElementById('pause-btn').addEventListener('click', togglePause);
     document.getElementById('resume-btn').addEventListener('click', togglePause);
-    document.getElementById('restart-btn').addEventListener('click', () => {
-        location.reload();
-    });
+    document.getElementById('restart-btn').addEventListener('click', restartGame);
     
     // Settings handlers
     const soundToggle = document.getElementById('sound-toggle');
