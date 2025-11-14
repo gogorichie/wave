@@ -14,6 +14,15 @@ let gameState = null;
 let lastTime = 0;
 let animationId = null;
 let isGameRunning = false;
+let isPaused = false;
+let gameStartTime = 0;
+let totalGameTime = 0;
+let waveAttempts = 0;
+let successfulWaves = 0;
+let currentStreak = 0;
+let soundEnabled = true;
+let difficulty = 'medium';
+let hoveredSector = -1;
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -108,14 +117,18 @@ function handleGameEvent(event) {
     switch (event.type) {
         case 'wave_started':
             console.log('Wave started at sector', event.data);
+            waveAttempts++;
             break;
         case 'wave_completed':
             showNotification(`Wave Complete! +${Math.floor(event.data.bonus)} points`, 'success');
             playSound('success');
+            successfulWaves++;
+            currentStreak++;
             break;
         case 'wave_failed':
             showNotification('Wave Failed!', 'failure');
             playSound('fail');
+            currentStreak = 0;
             break;
     }
 }
@@ -140,8 +153,79 @@ function showNotification(message, type = 'success') {
  * Play sound effect (placeholder - would use Web Audio API)
  */
 function playSound(type) {
+    if (!soundEnabled) return;
     // Placeholder for Web Audio API implementation
     console.log('Play sound:', type);
+}
+
+/**
+ * Toggle pause state
+ */
+function togglePause() {
+    isPaused = !isPaused;
+    const pauseOverlay = document.getElementById('pause-overlay');
+    const pauseBtn = document.getElementById('pause-btn');
+    
+    if (isPaused) {
+        pauseOverlay.classList.remove('hidden');
+        pauseBtn.textContent = '▶';
+        pauseBtn.title = 'Resume Game';
+    } else {
+        pauseOverlay.classList.add('hidden');
+        pauseBtn.textContent = '⏸';
+        pauseBtn.title = 'Pause Game';
+        lastTime = 0; // Reset time to prevent large dt jump
+    }
+}
+
+/**
+ * Toggle help overlay
+ */
+function toggleHelp() {
+    const helpOverlay = document.getElementById('help-overlay');
+    helpOverlay.classList.toggle('hidden');
+}
+
+/**
+ * Toggle fullscreen
+ */
+function toggleFullscreen() {
+    const container = document.getElementById('game-container');
+    
+    if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+            console.log('Fullscreen request failed:', err);
+        });
+    } else {
+        document.exitFullscreen();
+    }
+}
+
+/**
+ * Format time as MM:SS
+ */
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Update stats panel
+ */
+function updateStats() {
+    if (!isGameRunning || isPaused) return;
+    
+    // Update game time
+    totalGameTime += 0.016; // Approximate frame time
+    document.getElementById('game-time').textContent = formatTime(totalGameTime);
+    
+    // Update accuracy
+    const accuracy = waveAttempts > 0 ? (successfulWaves / waveAttempts * 100).toFixed(0) : 100;
+    document.getElementById('accuracy').textContent = accuracy + '%';
+    
+    // Update streak
+    document.getElementById('streak').textContent = currentStreak;
 }
 
 /**
@@ -374,14 +458,23 @@ function getSectorColor(sector) {
 function drawSector(sector, index, totalSectors) {
     const geom = getSectorGeometry(index, totalSectors);
     
+    // Check if this sector is hovered
+    const isHovered = index === hoveredSector;
+    
     // Use precomputed path if available
     if (geom.path) {
         ctx.fillStyle = getSectorColor(sector);
         ctx.fill(geom.path);
         
+        // Hover highlight
+        if (isHovered && isGameRunning && !isPaused) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fill(geom.path);
+        }
+        
         // Border
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke(geom.path);
     } else {
         // Fallback to manual drawing
@@ -397,8 +490,14 @@ function drawSector(sector, index, totalSectors) {
         ctx.fillStyle = getSectorColor(sector);
         ctx.fill();
         
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
+        // Hover highlight
+        if (isHovered && isGameRunning && !isPaused) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fill();
+        }
+        
+        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke();
     }
     
@@ -430,19 +529,33 @@ function drawSector(sector, index, totalSectors) {
     ctx.textBaseline = 'middle';
     ctx.fillText(index, textX, textY);
     
-    // Energy bar
-    if (sector.energy < 0.5) {
-        const barWidth = 30;
-        const barHeight = 5;
-        const barX = textX - barWidth / 2;
-        const barY = textY + 15;
-        
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(barX, barY, barWidth, barHeight);
-        
-        ctx.fillStyle = sector.energy < 0.3 ? '#f87171' : '#fbbf24';
-        ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
+    // Energy bar (enhanced visualization)
+    const barWidth = 30;
+    const barHeight = 5;
+    const barX = textX - barWidth / 2;
+    const barY = textY + 15;
+    
+    // Background bar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    
+    // Energy fill with color gradient
+    let energyColor;
+    if (sector.energy < 0.3) {
+        energyColor = '#f87171';
+    } else if (sector.energy < 0.6) {
+        energyColor = '#fbbf24';
+    } else {
+        energyColor = '#4ade80';
     }
+    
+    ctx.fillStyle = energyColor;
+    ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
+    
+    // Border for energy bar
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barWidth, barHeight);
 }
 
 /**
@@ -544,10 +657,16 @@ function gameLoop(timestamp) {
     // Cap dt to prevent large jumps
     const cappedDt = Math.min(dt, 0.1);
     
-    // Update game state
-    updateGameState(cappedDt);
+    // Only update if not paused
+    if (!isPaused) {
+        // Update game state
+        updateGameState(cappedDt);
+        
+        // Update stats
+        updateStats();
+    }
     
-    // Render
+    // Always render (so we can see pause state)
     render();
     
     // Continue loop
@@ -611,9 +730,28 @@ function getSectorAtPosition(x, y) {
  * Setup input handlers
  */
 function setupInputHandlers() {
+    // Mouse move for hover effects
+    canvas.addEventListener('mousemove', (e) => {
+        if (!isGameRunning || isPaused) {
+            hoveredSector = -1;
+            return;
+        }
+        
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        hoveredSector = getSectorAtPosition(x, y);
+    });
+    
+    // Mouse leave
+    canvas.addEventListener('mouseleave', () => {
+        hoveredSector = -1;
+    });
+    
     // Click to start wave
     canvas.addEventListener('click', (e) => {
-        if (!isGameRunning) return;
+        if (!isGameRunning || isPaused) return;
         
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -628,7 +766,7 @@ function setupInputHandlers() {
     // Right-click to boost energy
     canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (!isGameRunning) return;
+        if (!isGameRunning || isPaused) return;
         
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -641,19 +779,105 @@ function setupInputHandlers() {
         }
     });
     
+    // Touch support for mobile devices
+    let touchStartTime = 0;
+    let touchStartSector = -1;
+    
+    canvas.addEventListener('touchstart', (e) => {
+        if (!isGameRunning || isPaused) return;
+        e.preventDefault();
+        
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
+        touchStartSector = getSectorAtPosition(x, y);
+        touchStartTime = Date.now();
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+        if (!isGameRunning || isPaused) return;
+        e.preventDefault();
+        
+        const touchDuration = Date.now() - touchStartTime;
+        
+        if (touchStartSector >= 0) {
+            // Long press (>500ms) = boost energy
+            // Short tap = start wave
+            if (touchDuration > 500) {
+                boostSector(touchStartSector);
+                showNotification(`Sector ${touchStartSector} boosted!`, 'success');
+            } else {
+                startWave(touchStartSector);
+            }
+        }
+        
+        touchStartSector = -1;
+        touchStartTime = 0;
+    }, { passive: false });
+    
     // Keyboard controls
     document.addEventListener('keydown', (e) => {
         if (!isGameRunning) return;
         
-        if (e.code === 'Space') {
+        if (e.code === 'Space' && !isPaused) {
             e.preventDefault();
             startWave(0);
+        } else if (e.code === 'KeyP') {
+            e.preventDefault();
+            togglePause();
+        } else if (e.code === 'KeyH') {
+            e.preventDefault();
+            toggleHelp();
+        } else if (e.code === 'KeyF') {
+            e.preventDefault();
+            toggleFullscreen();
+        } else if (e.code === 'Escape') {
+            e.preventDefault();
+            // Close help if open, otherwise pause
+            const helpOverlay = document.getElementById('help-overlay');
+            if (!helpOverlay.classList.contains('hidden')) {
+                toggleHelp();
+            } else if (!isPaused) {
+                togglePause();
+            }
         }
     });
     
-    // Save/Load buttons
+    // Button handlers
     document.getElementById('save-btn').addEventListener('click', saveGame);
     document.getElementById('load-btn').addEventListener('click', loadGame);
+    document.getElementById('help-toggle').addEventListener('click', toggleHelp);
+    document.getElementById('pause-btn').addEventListener('click', togglePause);
+    document.getElementById('resume-btn').addEventListener('click', togglePause);
+    document.getElementById('restart-btn').addEventListener('click', () => {
+        location.reload();
+    });
+    
+    // Settings handlers
+    const soundToggle = document.getElementById('sound-toggle');
+    const soundTogglePause = document.getElementById('sound-toggle-pause');
+    
+    soundToggle.addEventListener('change', (e) => {
+        soundEnabled = e.target.checked;
+        soundTogglePause.checked = soundEnabled;
+    });
+    
+    soundTogglePause.addEventListener('change', (e) => {
+        soundEnabled = e.target.checked;
+        soundToggle.checked = soundEnabled;
+    });
+    
+    document.getElementById('difficulty-select').addEventListener('change', (e) => {
+        difficulty = e.target.value;
+        console.log('Difficulty set to:', difficulty);
+    });
+    
+    document.getElementById('volume-slider').addEventListener('input', (e) => {
+        const volume = e.target.value;
+        document.getElementById('volume-label').textContent = volume + '%';
+    });
 }
 
 /**
@@ -664,6 +888,20 @@ function startGame() {
     document.getElementById('game-title').classList.remove('hidden');
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('controls').classList.remove('hidden');
+    document.getElementById('help-toggle').classList.remove('hidden');
+    document.getElementById('pause-btn').classList.remove('hidden');
+    document.getElementById('stats-panel').classList.remove('hidden');
+    
+    // Reset game stats
+    gameStartTime = Date.now();
+    totalGameTime = 0;
+    waveAttempts = 0;
+    successfulWaves = 0;
+    currentStreak = 0;
+    
+    // Get settings
+    soundEnabled = document.getElementById('sound-toggle').checked;
+    difficulty = document.getElementById('difficulty-select').value;
     
     initGame();
     startGameLoop();

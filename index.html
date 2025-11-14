@@ -38,6 +38,7 @@
             width: 100%;
             height: 100%;
             display: block;
+            cursor: pointer;
         }
 
         #loading {
@@ -226,13 +227,291 @@
         .failure {
             color: #f87171;
         }
+
+        #help-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 0.9em;
+            backdrop-filter: blur(10px);
+            z-index: 40;
+        }
+
+        #help-overlay h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1em;
+            color: #ffd700;
+        }
+
+        #help-overlay ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #help-overlay li {
+            margin: 5px 0;
+            line-height: 1.4;
+        }
+
+        #help-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2em;
+            font-weight: bold;
+            z-index: 41;
+            transition: all 0.3s;
+        }
+
+        #help-toggle:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: scale(1.1);
+        }
+
+        #pause-btn {
+            position: absolute;
+            top: 20px;
+            right: 70px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2em;
+            z-index: 41;
+            transition: all 0.3s;
+        }
+
+        #pause-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: scale(1.1);
+        }
+
+        #pause-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 50;
+        }
+
+        #pause-overlay h2 {
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        #pause-overlay button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            font-size: 1em;
+            border-radius: 25px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+
+        #pause-overlay button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .settings-panel {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .settings-panel label {
+            display: block;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+
+        .settings-panel input[type="checkbox"] {
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .settings-panel input[type="range"] {
+            width: 200px;
+            margin-left: 10px;
+        }
+
+        #stats-panel {
+            position: absolute;
+            bottom: 100px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            font-size: 0.9em;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #stats-panel .stat-item {
+            margin: 5px 0;
+        }
+
+        .difficulty-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .difficulty-easy { background: #4ade80; color: #000; }
+        .difficulty-medium { background: #fbbf24; color: #000; }
+        .difficulty-hard { background: #f87171; color: #fff; }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            #game-title {
+                font-size: 2em;
+                top: 10px;
+            }
+
+            #hud {
+                top: 70px;
+                left: 10px;
+                right: 10px;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .hud-panel {
+                padding: 10px 15px;
+                width: 100%;
+            }
+
+            .hud-value {
+                font-size: 1.2em;
+            }
+
+            #help-toggle, #pause-btn {
+                width: 35px;
+                height: 35px;
+                font-size: 1em;
+            }
+
+            #pause-btn {
+                right: 60px;
+            }
+
+            #help-overlay {
+                right: 10px;
+                left: 10px;
+                top: 10px;
+                max-width: none;
+            }
+
+            #stats-panel {
+                bottom: 80px;
+                left: 10px;
+                font-size: 0.8em;
+                padding: 10px 15px;
+            }
+
+            #controls {
+                bottom: 10px;
+            }
+
+            #controls button {
+                padding: 12px 20px;
+                font-size: 0.9em;
+                margin: 0 5px;
+            }
+
+            #tutorial {
+                max-width: 90%;
+                padding: 30px 20px;
+            }
+
+            #pause-overlay {
+                max-width: 90%;
+                padding: 30px 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #game-title {
+                font-size: 1.5em;
+            }
+
+            #controls button {
+                padding: 10px 15px;
+                font-size: 0.85em;
+            }
+        }
+
+        /* Touch device improvements */
+        @media (hover: none) and (pointer: coarse) {
+            #game-canvas {
+                touch-action: none;
+            }
+
+            #controls button,
+            #tutorial button,
+            #pause-overlay button {
+                min-height: 44px;
+                min-width: 44px;
+            }
+        }
+
+        /* Accessibility improvements */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        *:focus-visible {
+            outline: 2px solid #667eea;
+            outline-offset: 2px;
+        }
+
+        button:focus-visible {
+            outline: 3px solid #667eea;
+        }
     </style>
 </head>
 <body>
-    <div id="game-container">
-        <canvas id="game-canvas"></canvas>
+    <div id="game-container" role="main" aria-label="Stadium Wave Game">
+        <canvas id="game-canvas" aria-label="Game stadium visualization"></canvas>
         
-        <div id="game-title" class="hidden">Fan Wave</div>
+        <div id="game-title" class="hidden" aria-live="polite">Fan Wave</div>
         
         <div id="loading">
             <h2>Loading Python Game Engine...</h2>
@@ -240,25 +519,25 @@
             <p style="margin-top: 20px;">Initializing Pyodide runtime</p>
         </div>
 
-        <div id="hud" class="hidden">
+        <div id="hud" class="hidden" role="region" aria-label="Game statistics">
             <div class="hud-panel">
                 <div class="hud-item">
                     <div class="hud-label">Score</div>
-                    <div class="hud-value" id="score">0</div>
+                    <div class="hud-value" id="score" aria-live="polite">0</div>
                 </div>
                 <div class="hud-item">
                     <div class="hud-label">Combo</div>
-                    <div class="hud-value combo-value" id="combo">0x</div>
+                    <div class="hud-value combo-value" id="combo" aria-live="polite">0x</div>
                 </div>
             </div>
             <div class="hud-panel">
                 <div class="hud-item">
                     <div class="hud-label">Waves</div>
-                    <div class="hud-value" id="waves">0</div>
+                    <div class="hud-value" id="waves" aria-live="polite">0</div>
                 </div>
                 <div class="hud-item">
                     <div class="hud-label">Best Combo</div>
-                    <div class="hud-value" id="max-combo">0x</div>
+                    <div class="hud-value" id="max-combo" aria-live="polite">0x</div>
                 </div>
             </div>
         </div>
@@ -269,7 +548,59 @@
             <p>Keep the energy high and the combo going.</p>
             <p>⚡ <strong>Right-click</strong> sectors to boost their energy.</p>
             <p>⌨️ <strong>Spacebar</strong> starts wave at sector 0.</p>
+            <div class="settings-panel">
+                <label>
+                    <input type="checkbox" id="sound-toggle" checked>
+                    🔊 Sound Effects
+                </label>
+                <label>
+                    Difficulty:
+                    <select id="difficulty-select">
+                        <option value="easy">Easy</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </label>
+            </div>
             <button id="start-btn">Let's Go!</button>
+        </div>
+
+        <button id="help-toggle" class="hidden" title="Toggle Help">?</button>
+        <button id="pause-btn" class="hidden" title="Pause Game">⏸</button>
+
+        <div id="help-overlay" class="hidden">
+            <h3>🎮 Controls</h3>
+            <ul>
+                <li>🖱️ <strong>Left-click</strong> sector to start wave</li>
+                <li>🖱️ <strong>Right-click</strong> sector to boost energy</li>
+                <li>⌨️ <strong>Space</strong> to start wave at sector 0</li>
+                <li>⌨️ <strong>P</strong> to pause/resume</li>
+                <li>⌨️ <strong>F</strong> for fullscreen</li>
+                <li>⌨️ <strong>H</strong> to toggle this help</li>
+            </ul>
+        </div>
+
+        <div id="pause-overlay" class="hidden">
+            <h2>⏸ Paused</h2>
+            <div class="settings-panel">
+                <label>
+                    <input type="checkbox" id="sound-toggle-pause">
+                    🔊 Sound Effects
+                </label>
+                <label>
+                    Volume: <span id="volume-label">100%</span>
+                    <br>
+                    <input type="range" id="volume-slider" min="0" max="100" value="100">
+                </label>
+            </div>
+            <button id="resume-btn">Resume</button>
+            <button id="restart-btn">Restart</button>
+        </div>
+
+        <div id="stats-panel" class="hidden">
+            <div class="stat-item">⏱️ Time: <span id="game-time">0:00</span></div>
+            <div class="stat-item">🎯 Accuracy: <span id="accuracy">100%</span></div>
+            <div class="stat-item">🔥 Streak: <span id="streak">0</span></div>
         </div>
 
         <div id="controls" class="hidden">
