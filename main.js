@@ -906,6 +906,34 @@ function startGame() {
 }
 
 /**
+ * Restart the game
+ */
+function restartGame() {
+    // Stop the current game loop
+    stopGameLoop();
+    
+    // Reset game stats
+    gameStartTime = Date.now();
+    totalGameTime = 0;
+    waveAttempts = 0;
+    successfulWaves = 0;
+    currentStreak = 0;
+    
+    // Hide pause overlay if it's showing
+    document.getElementById('pause-overlay').classList.add('hidden');
+    isPaused = false;
+    
+    // Reset pause button
+    const pauseBtn = document.getElementById('pause-btn');
+    pauseBtn.textContent = '⏸';
+    pauseBtn.title = 'Pause Game';
+    
+    // Re-initialize game
+    initGame();
+    startGameLoop();
+}
+
+/**
  * Main initialization
  */
 async function main() {
