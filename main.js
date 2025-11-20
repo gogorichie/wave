@@ -1144,8 +1144,10 @@ function startGame() {
     // Get settings
     soundEnabled = document.getElementById('sound-toggle').checked;
     difficulty = document.getElementById('difficulty-select').value;
-    fieldType = document.getElementById('field-type-select').value;
-    stadiumType = document.getElementById('stadium-type-select').value;
+    const fieldTypeSelectElem = document.getElementById('field-type-select');
+    const stadiumTypeSelectElem = document.getElementById('stadium-type-select');
+    fieldType = fieldTypeSelectElem ? fieldTypeSelectElem.value : 'soccer';
+    stadiumType = stadiumTypeSelectElem ? stadiumTypeSelectElem.value : 'classic';
     resetFieldGradients();
 
     initGame();
