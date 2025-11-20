@@ -688,6 +688,12 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
     ctx.clip();
 
+    // Baseball field layout constants
+    const COS_45 = Math.sqrt(2) / 2;  // ~0.707, for 45-degree angle calculations
+    const MOUND_DISTANCE_RATIO = 0.9;  // Pitcher's mound is 90% of base distance from home
+    const FOUL_LINE_EXTENT_H = 0.9;  // Horizontal extent of foul lines
+    const FOUL_LINE_EXTENT_V = 0.6;  // Vertical extent of foul lines
+    
     // Home plate is at the bottom, diamond extends upward
     // Distance from center to home plate (shifted down)
     const homePlateOffset = fieldRadius * 0.45;
@@ -699,14 +705,14 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     
     // Base positions (counterclockwise from home at bottom)
     // Home -> 1st (right) -> 2nd (top) -> 3rd (left) -> Home
-    const firstBaseX = homePlateX + baseDistance * 0.707;  // 45 degrees
-    const firstBaseY = homePlateY - baseDistance * 0.707;
+    const firstBaseX = homePlateX + baseDistance * COS_45;  // 45 degrees
+    const firstBaseY = homePlateY - baseDistance * COS_45;
     
     const secondBaseX = homePlateX;
     const secondBaseY = homePlateY - baseDistance * Math.sqrt(2);
     
-    const thirdBaseX = homePlateX - baseDistance * 0.707;
-    const thirdBaseY = homePlateY - baseDistance * 0.707;
+    const thirdBaseX = homePlateX - baseDistance * COS_45;
+    const thirdBaseY = homePlateY - baseDistance * COS_45;
     
     // Draw dirt infield (diamond shape)
     ctx.beginPath();
@@ -726,8 +732,8 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.beginPath();
     ctx.moveTo(homePlateX, homePlateY);
     // Extend through 3rd base to edge
-    const leftFoulExtendX = homePlateX - fieldRadius * 0.9;
-    const leftFoulExtendY = centerY - fieldRadius * 0.6;
+    const leftFoulExtendX = homePlateX - fieldRadius * FOUL_LINE_EXTENT_H;
+    const leftFoulExtendY = centerY - fieldRadius * FOUL_LINE_EXTENT_V;
     ctx.lineTo(leftFoulExtendX, leftFoulExtendY);
     ctx.stroke();
     
@@ -735,8 +741,8 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.beginPath();
     ctx.moveTo(homePlateX, homePlateY);
     // Extend through 1st base to edge
-    const rightFoulExtendX = homePlateX + fieldRadius * 0.9;
-    const rightFoulExtendY = centerY - fieldRadius * 0.6;
+    const rightFoulExtendX = homePlateX + fieldRadius * FOUL_LINE_EXTENT_H;
+    const rightFoulExtendY = centerY - fieldRadius * FOUL_LINE_EXTENT_V;
     ctx.lineTo(rightFoulExtendX, rightFoulExtendY);
     ctx.stroke();
     
@@ -778,9 +784,9 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
     ctx.restore();
     
-    // Pitcher's mound (between home and 2nd, closer to home)
+    // Pitcher's mound (between home and 2nd, realistic baseball proportions)
     const moundX = homePlateX;
-    const moundY = homePlateY - baseDistance * 0.9; // About 60% of the way to 2nd base
+    const moundY = homePlateY - baseDistance * MOUND_DISTANCE_RATIO;
     ctx.beginPath();
     ctx.arc(moundX, moundY, fieldRadius * 0.06, 0, Math.PI * 2);
     ctx.fillStyle = BASEBALL_FIELD_COLORS.pitchersMound;
