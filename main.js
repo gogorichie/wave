@@ -58,6 +58,16 @@ const STADIUM_THEMES = {
     }
 };
 
+// Baseball field colors
+const BASEBALL_FIELD_COLORS = {
+    dirt: '#c68642',
+    warningTrack: 'rgba(255, 255, 255, 0.1)',
+    basePath: '#f5e0c3',
+    base: '#f5f5f5',
+    pitchersMound: '#d9a066',
+    homePlate: '#ffffff'
+};
+
 // Performance optimization
 let sectorPaths = [];
 let offscreenCanvas = null;
@@ -672,7 +682,6 @@ function drawSoccerField(centerX, centerY, fieldRadius) {
 function drawBaseballField(centerX, centerY, fieldRadius) {
     drawGrassBase(centerX, centerY, fieldRadius);
 
-    const dirtColor = '#c68642';
     const infieldRadius = fieldRadius * 0.55;
 
     ctx.save();
@@ -683,7 +692,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     // Outfield warning track
     ctx.beginPath();
     ctx.arc(centerX, centerY, fieldRadius * 0.95, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.strokeStyle = BASEBALL_FIELD_COLORS.warningTrack;
     ctx.lineWidth = 6;
     ctx.stroke();
 
@@ -700,7 +709,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
     diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
     ctx.closePath();
-    ctx.fillStyle = dirtColor;
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.dirt;
     ctx.fill();
 
     // Base paths
@@ -708,7 +717,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
     diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
     ctx.closePath();
-    ctx.strokeStyle = '#f5e0c3';
+    ctx.strokeStyle = BASEBALL_FIELD_COLORS.basePath;
     ctx.lineWidth = 4;
     ctx.stroke();
 
@@ -718,7 +727,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
         ctx.save();
         ctx.translate(point.x, point.y);
         ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = '#f5f5f5';
+        ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
         ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
         ctx.restore();
     });
@@ -726,7 +735,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     // Pitcher's mound
     ctx.beginPath();
     ctx.arc(centerX, centerY, fieldRadius * 0.08, 0, Math.PI * 2);
-    ctx.fillStyle = '#d9a066';
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.pitchersMound;
     ctx.fill();
 
     // Home plate
@@ -739,7 +748,7 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.lineTo(centerX, centerY + diamondRadius - plateHeight);
     ctx.lineTo(centerX - plateWidth / 2, centerY + diamondRadius - plateHeight / 2);
     ctx.closePath();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.homePlate;
     ctx.fill();
 
     ctx.restore();
