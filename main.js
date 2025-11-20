@@ -61,7 +61,6 @@ const STADIUM_THEMES = {
 // Baseball field colors
 const BASEBALL_FIELD_COLORS = {
     dirt: '#c68642',
-    warningTrack: 'rgba(255, 255, 255, 0.1)',
     basePath: '#f5e0c3',
     base: '#f5f5f5',
     pitchersMound: '#d9a066',
