@@ -778,9 +778,9 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
     ctx.restore();
     
-    // Pitcher's mound (in center of diamond)
+    // Pitcher's mound (between home and 2nd, closer to home)
     const moundX = homePlateX;
-    const moundY = homePlateY - baseDistance * 0.707; // Halfway between home and 2nd
+    const moundY = homePlateY - baseDistance * 0.9; // About 60% of the way to 2nd base
     ctx.beginPath();
     ctx.arc(moundX, moundY, fieldRadius * 0.06, 0, Math.PI * 2);
     ctx.fillStyle = BASEBALL_FIELD_COLORS.pitchersMound;
