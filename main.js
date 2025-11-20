@@ -1077,7 +1077,7 @@ function setupInputHandlers() {
     const soundTogglePause = document.getElementById('sound-toggle-pause');
     const fieldTypeSelect = document.getElementById('field-type-select');
     const stadiumTypeSelect = document.getElementById('stadium-type-select');
-    fieldType = fieldTypeSelect ? fieldTypeSelect.value : null;
+    fieldType = fieldTypeSelect ? fieldTypeSelect.value : 'soccer';
     stadiumType = stadiumTypeSelect ? stadiumTypeSelect.value : 'classic';
 
     soundToggle.addEventListener('change', (e) => {
@@ -1095,22 +1095,26 @@ function setupInputHandlers() {
         console.log('Difficulty set to:', difficulty);
     });
 
-    fieldTypeSelect.addEventListener('change', (e) => {
-        fieldType = e.target.value;
-        resetFieldGradients();
+    if (fieldTypeSelect) {
+        fieldTypeSelect.addEventListener('change', (e) => {
+            fieldType = e.target.value;
+            resetFieldGradients();
 
-        if (gameState) {
-            render();
-        }
-    });
+            if (gameState) {
+                render();
+            }
+        });
+    }
 
-    stadiumTypeSelect.addEventListener('change', (e) => {
-        stadiumType = e.target.value;
-        
-        if (gameState) {
-            render();
-        }
-    });
+    if (stadiumTypeSelect) {
+        stadiumTypeSelect.addEventListener('change', (e) => {
+            stadiumType = e.target.value;
+            
+            if (gameState) {
+                render();
+            }
+        });
+    }
 
     document.getElementById('volume-slider').addEventListener('input', (e) => {
         const volume = e.target.value;
