@@ -2,7 +2,10 @@
 
 A browser-based interactive game where players orchestrate the stadium "wave" by coordinating with AI-controlled crowd sectors to achieve synchronized animations and earn combo points.
 
-![GitHub Release](https://img.shields.io/github/v/release/gogorichie/wave) ![GitHub License](https://img.shields.io/github/license/gogorichie/wave)
+[![.github/workflows/ci-cd.yml](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml)
+  ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-closed/gogorichie/wave)
+ ![GitHub top language](https://img.shields.io/github/languages/top/gogorichie/wave) ![GitHub Release](https://img.shields.io/github/v/release/gogorichie/wave)
+
 
 ## Features
 
@@ -159,4 +162,3 @@ MIT
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Deployment
-[![.github/workflows/ci-cd.yml](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml)
