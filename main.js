@@ -1037,7 +1037,7 @@ function setupInputHandlers() {
     const soundToggle = document.getElementById('sound-toggle');
     const soundTogglePause = document.getElementById('sound-toggle-pause');
     const fieldTypeSelect = document.getElementById('field-type-select');
-    fieldType = fieldTypeSelect.value;
+    fieldType = fieldTypeSelect ? fieldTypeSelect.value : null;
 
     soundToggle.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
