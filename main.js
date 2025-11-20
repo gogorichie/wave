@@ -23,6 +23,7 @@ let currentStreak = 0;
 let soundEnabled = true;
 let difficulty = 'medium';
 let hoveredSector = -1;
+let fieldType = 'soccer';
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -33,6 +34,7 @@ let sectorPaths = [];
 let offscreenCanvas = null;
 let offscreenCtx = null;
 let resizeTimeout = null;
+let fieldGradients = {};
 
 /**
  * Initialize Pyodide and load Python game engine
@@ -393,14 +395,16 @@ function setupCanvas() {
     // Debounced resize handler
     const debouncedResize = debounce(() => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
-        precomputeSectorPaths(gameState ? gameState.sectors.length : 16, 
+        precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
-        
+
         // Update offscreen canvas size
         const devicePixelRatio = window.devicePixelRatio || 1;
         offscreenCanvas.width = newDimensions.width * devicePixelRatio;
         offscreenCanvas.height = newDimensions.height * devicePixelRatio;
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
+
+        resetFieldGradients();
     }, 150);
     
     // Handle resize
@@ -561,43 +565,219 @@ function drawSector(sector, index, totalSectors) {
 /**
  * Draw stadium field (cached gradients for better performance)
  */
-let fieldGradient = null;
+function resetFieldGradients() {
+    fieldGradients = {};
+}
+
+function getFieldGradient(key, builder) {
+    if (!fieldGradients[key]) {
+        fieldGradients[key] = builder();
+    }
+    return fieldGradients[key];
+}
+
+function drawGrassBase(centerX, centerY, fieldRadius) {
+    const gradient = getFieldGradient('base', () => {
+        const baseGradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, fieldRadius
+        );
+        baseGradient.addColorStop(0, '#2d5016');
+        baseGradient.addColorStop(1, '#1a3d0a');
+        return baseGradient;
+    });
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+}
+
+function drawSoccerField(centerX, centerY, fieldRadius) {
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+
+    // Center circle
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center line
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - fieldRadius);
+    ctx.lineTo(centerX, centerY + fieldRadius);
+    ctx.stroke();
+
+    // Penalty boxes
+    const boxWidth = fieldRadius * 0.7;
+    const boxHeight = fieldRadius * 0.18;
+    ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius, boxWidth, boxHeight);
+    ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius - boxHeight, boxWidth, boxHeight);
+
+    // Goal boxes
+    const goalBoxWidth = fieldRadius * 0.35;
+    const goalBoxHeight = fieldRadius * 0.08;
+    ctx.strokeRect(centerX - goalBoxWidth / 2, centerY - fieldRadius, goalBoxWidth, goalBoxHeight);
+    ctx.strokeRect(centerX - goalBoxWidth / 2, centerY + fieldRadius - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+
+    ctx.restore();
+}
+
+function drawBaseballField(centerX, centerY, fieldRadius) {
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    const dirtColor = '#c68642';
+    const infieldRadius = fieldRadius * 0.55;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Outfield warning track
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.95, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // Infield dirt diamond
+    const diamondRadius = infieldRadius * 0.75;
+    const diamondPoints = [
+        { x: centerX, y: centerY - diamondRadius },
+        { x: centerX + diamondRadius, y: centerY },
+        { x: centerX, y: centerY + diamondRadius },
+        { x: centerX - diamondRadius, y: centerY }
+    ];
+
+    ctx.beginPath();
+    ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
+    diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+    ctx.fillStyle = dirtColor;
+    ctx.fill();
+
+    // Base paths
+    ctx.beginPath();
+    ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
+    diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+    ctx.strokeStyle = '#f5e0c3';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Bases
+    const baseSize = fieldRadius * 0.035;
+    diamondPoints.forEach(point => {
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+        ctx.restore();
+    });
+
+    // Pitcher's mound
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.08, 0, Math.PI * 2);
+    ctx.fillStyle = '#d9a066';
+    ctx.fill();
+
+    // Home plate
+    const plateWidth = fieldRadius * 0.06;
+    const plateHeight = fieldRadius * 0.05;
+    ctx.beginPath();
+    ctx.moveTo(centerX - plateWidth / 2, centerY + diamondRadius + plateHeight / 2);
+    ctx.lineTo(centerX + plateWidth / 2, centerY + diamondRadius + plateHeight / 2);
+    ctx.lineTo(centerX + plateWidth / 2, centerY + diamondRadius - plateHeight / 2);
+    ctx.lineTo(centerX, centerY + diamondRadius - plateHeight);
+    ctx.lineTo(centerX - plateWidth / 2, centerY + diamondRadius - plateHeight / 2);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function drawFootballField(centerX, centerY, fieldRadius) {
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    const fieldWidth = fieldRadius * 1.6;
+    const fieldHeight = fieldRadius * 0.9;
+    const top = centerY - fieldHeight / 2;
+    const left = centerX - fieldWidth / 2;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Alternating stripes
+    const stripeCount = 10;
+    const stripeWidth = fieldWidth / stripeCount;
+    for (let i = 0; i < stripeCount; i++) {
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(26, 96, 38, 0.85)' : 'rgba(35, 128, 50, 0.85)';
+        ctx.fillRect(left + i * stripeWidth, top, stripeWidth, fieldHeight);
+    }
+
+    // End zones
+    const endZoneHeight = fieldHeight * 0.12;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.fillRect(left, top, fieldWidth, endZoneHeight);
+    ctx.fillRect(left, top + fieldHeight - endZoneHeight, fieldWidth, endZoneHeight);
+
+    // Yard lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    const yardLineCount = 11;
+    for (let i = 0; i <= yardLineCount; i++) {
+        const y = top + (i / yardLineCount) * fieldHeight;
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(left + fieldWidth, y);
+        ctx.stroke();
+    }
+
+    // Hash marks
+    const hashMarkSpacing = fieldWidth / 14;
+    for (let i = 1; i < 14; i++) {
+        const x = left + i * hashMarkSpacing;
+        for (let j = 1; j < yardLineCount; j++) {
+            const y = top + (j / yardLineCount) * fieldHeight;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 4);
+            ctx.lineTo(x, y + 4);
+            ctx.stroke();
+        }
+    }
+
+    ctx.restore();
+}
 
 function drawField() {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
     const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
-    
-    // Create gradient once and reuse
-    if (!fieldGradient) {
-        fieldGradient = ctx.createRadialGradient(
-            centerX, centerY, 0,
-            centerX, centerY, fieldRadius
-        );
-        fieldGradient.addColorStop(0, '#2d5016');
-        fieldGradient.addColorStop(1, '#1a3d0a');
+
+    switch (fieldType) {
+        case 'baseball':
+            drawBaseballField(centerX, centerY, fieldRadius);
+            break;
+        case 'football':
+            drawFootballField(centerX, centerY, fieldRadius);
+            break;
+        default:
+            drawSoccerField(centerX, centerY, fieldRadius);
+            break;
     }
-    
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
-    ctx.fillStyle = fieldGradient;
-    ctx.fill();
-    
-    // Field lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 2;
-    
-    // Center circle
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Center line
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY - fieldRadius);
-    ctx.lineTo(centerX, centerY + fieldRadius);
-    ctx.stroke();
 }
 
 /**
@@ -856,7 +1036,9 @@ function setupInputHandlers() {
     // Settings handlers
     const soundToggle = document.getElementById('sound-toggle');
     const soundTogglePause = document.getElementById('sound-toggle-pause');
-    
+    const fieldTypeSelect = document.getElementById('field-type-select');
+    fieldType = fieldTypeSelect.value;
+
     soundToggle.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
         soundTogglePause.checked = soundEnabled;
@@ -871,7 +1053,16 @@ function setupInputHandlers() {
         difficulty = e.target.value;
         console.log('Difficulty set to:', difficulty);
     });
-    
+
+    fieldTypeSelect.addEventListener('change', (e) => {
+        fieldType = e.target.value;
+        resetFieldGradients();
+
+        if (gameState) {
+            render();
+        }
+    });
+
     document.getElementById('volume-slider').addEventListener('input', (e) => {
         const volume = e.target.value;
         document.getElementById('volume-label').textContent = volume + '%';
@@ -900,7 +1091,9 @@ function startGame() {
     // Get settings
     soundEnabled = document.getElementById('sound-toggle').checked;
     difficulty = document.getElementById('difficulty-select').value;
-    
+    fieldType = document.getElementById('field-type-select').value;
+    resetFieldGradients();
+
     initGame();
     startGameLoop();
 }
@@ -927,8 +1120,9 @@ function restartGame() {
     const pauseBtn = document.getElementById('pause-btn');
     pauseBtn.textContent = '⏸';
     pauseBtn.title = 'Pause Game';
-    
+
     // Re-initialize game
+    resetFieldGradients();
     initGame();
     startGameLoop();
 }
