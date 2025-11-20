@@ -65,7 +65,8 @@ const BASEBALL_FIELD_COLORS = {
     basePath: '#f5e0c3',
     base: '#f5f5f5',
     pitchersMound: '#d9a066',
-    homePlate: '#ffffff'
+    homePlate: '#ffffff',
+    foulLine: 'rgba(255, 255, 255, 0.8)'
 };
 
 // Performance optimization
@@ -680,77 +681,125 @@ function drawSoccerField(centerX, centerY, fieldRadius) {
 }
 
 function drawBaseballField(centerX, centerY, fieldRadius) {
+    // Draw grass base for entire field
     drawGrassBase(centerX, centerY, fieldRadius);
-
-    const infieldRadius = fieldRadius * 0.55;
 
     ctx.save();
     ctx.beginPath();
     ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
     ctx.clip();
 
-    // Outfield warning track
+    // Home plate is at the bottom, diamond extends upward
+    // Distance from center to home plate (shifted down)
+    const homePlateOffset = fieldRadius * 0.45;
+    const homePlateY = centerY + homePlateOffset;
+    const homePlateX = centerX;
+    
+    // Diamond dimensions - going counterclockwise from home
+    const baseDistance = fieldRadius * 0.5;
+    
+    // Base positions (counterclockwise from home at bottom)
+    // Home -> 1st (right) -> 2nd (top) -> 3rd (left) -> Home
+    const firstBaseX = homePlateX + baseDistance * 0.707;  // 45 degrees
+    const firstBaseY = homePlateY - baseDistance * 0.707;
+    
+    const secondBaseX = homePlateX;
+    const secondBaseY = homePlateY - baseDistance * Math.sqrt(2);
+    
+    const thirdBaseX = homePlateX - baseDistance * 0.707;
+    const thirdBaseY = homePlateY - baseDistance * 0.707;
+    
+    // Draw dirt infield (diamond shape)
     ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.95, 0, Math.PI * 2);
-    ctx.strokeStyle = BASEBALL_FIELD_COLORS.warningTrack;
-    ctx.lineWidth = 6;
-    ctx.stroke();
-
-    // Infield dirt diamond
-    const diamondRadius = infieldRadius * 0.75;
-    const diamondPoints = [
-        { x: centerX, y: centerY - diamondRadius },
-        { x: centerX + diamondRadius, y: centerY },
-        { x: centerX, y: centerY + diamondRadius },
-        { x: centerX - diamondRadius, y: centerY }
-    ];
-
-    ctx.beginPath();
-    ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
-    diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
+    ctx.moveTo(homePlateX, homePlateY);
+    ctx.lineTo(firstBaseX, firstBaseY);
+    ctx.lineTo(secondBaseX, secondBaseY);
+    ctx.lineTo(thirdBaseX, thirdBaseY);
     ctx.closePath();
     ctx.fillStyle = BASEBALL_FIELD_COLORS.dirt;
     ctx.fill();
-
-    // Base paths
+    
+    // Draw foul lines from home plate spreading to top edge
+    ctx.strokeStyle = BASEBALL_FIELD_COLORS.foulLine;
+    ctx.lineWidth = 3;
+    
+    // Left foul line (3rd base line)
     ctx.beginPath();
-    ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
-    diamondPoints.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
-    ctx.closePath();
+    ctx.moveTo(homePlateX, homePlateY);
+    // Extend through 3rd base to edge
+    const leftFoulExtendX = homePlateX - fieldRadius * 0.9;
+    const leftFoulExtendY = centerY - fieldRadius * 0.6;
+    ctx.lineTo(leftFoulExtendX, leftFoulExtendY);
+    ctx.stroke();
+    
+    // Right foul line (1st base line)
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY);
+    // Extend through 1st base to edge
+    const rightFoulExtendX = homePlateX + fieldRadius * 0.9;
+    const rightFoulExtendY = centerY - fieldRadius * 0.6;
+    ctx.lineTo(rightFoulExtendX, rightFoulExtendY);
+    ctx.stroke();
+    
+    // Draw base paths (connecting the bases)
     ctx.strokeStyle = BASEBALL_FIELD_COLORS.basePath;
     ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Bases
-    const baseSize = fieldRadius * 0.035;
-    diamondPoints.forEach(point => {
-        ctx.save();
-        ctx.translate(point.x, point.y);
-        ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
-        ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
-        ctx.restore();
-    });
-
-    // Pitcher's mound
     ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.08, 0, Math.PI * 2);
+    ctx.moveTo(homePlateX, homePlateY);
+    ctx.lineTo(firstBaseX, firstBaseY);
+    ctx.lineTo(secondBaseX, secondBaseY);
+    ctx.lineTo(thirdBaseX, thirdBaseY);
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw bases (as white squares)
+    const baseSize = fieldRadius * 0.035;
+    
+    // First base
+    ctx.save();
+    ctx.translate(firstBaseX, firstBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Second base
+    ctx.save();
+    ctx.translate(secondBaseX, secondBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Third base
+    ctx.save();
+    ctx.translate(thirdBaseX, thirdBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Pitcher's mound (in center of diamond)
+    const moundX = homePlateX;
+    const moundY = homePlateY - baseDistance * 0.707; // Halfway between home and 2nd
+    ctx.beginPath();
+    ctx.arc(moundX, moundY, fieldRadius * 0.06, 0, Math.PI * 2);
     ctx.fillStyle = BASEBALL_FIELD_COLORS.pitchersMound;
     ctx.fill();
-
-    // Home plate
+    
+    // Home plate (pentagon shape pointing toward pitcher)
     const plateWidth = fieldRadius * 0.06;
     const plateHeight = fieldRadius * 0.05;
     ctx.beginPath();
-    ctx.moveTo(centerX - plateWidth / 2, centerY + diamondRadius + plateHeight / 2);
-    ctx.lineTo(centerX + plateWidth / 2, centerY + diamondRadius + plateHeight / 2);
-    ctx.lineTo(centerX + plateWidth / 2, centerY + diamondRadius - plateHeight / 2);
-    ctx.lineTo(centerX, centerY + diamondRadius - plateHeight);
-    ctx.lineTo(centerX - plateWidth / 2, centerY + diamondRadius - plateHeight / 2);
+    ctx.moveTo(homePlateX, homePlateY - plateHeight);  // Point toward pitcher
+    ctx.lineTo(homePlateX + plateWidth / 2, homePlateY);
+    ctx.lineTo(homePlateX + plateWidth / 2, homePlateY + plateHeight / 2);
+    ctx.lineTo(homePlateX - plateWidth / 2, homePlateY + plateHeight / 2);
+    ctx.lineTo(homePlateX - plateWidth / 2, homePlateY);
     ctx.closePath();
     ctx.fillStyle = BASEBALL_FIELD_COLORS.homePlate;
     ctx.fill();
-
+    
     ctx.restore();
 }
 
