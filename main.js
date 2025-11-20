@@ -24,10 +24,39 @@ let soundEnabled = true;
 let difficulty = 'medium';
 let hoveredSector = -1;
 let fieldType = 'soccer';
+let stadiumType = 'classic';
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
+
+// Stadium color themes
+const STADIUM_THEMES = {
+    classic: {
+        idle: '#2563eb',
+        anticipating: '#fbbf24',
+        standing: '#10b981',
+        seated: '#6366f1',
+        border: 'rgba(255, 255, 255, 0.3)',
+        hoverBorder: 'rgba(255, 255, 255, 0.8)'
+    },
+    modern: {
+        idle: '#8b5cf6',
+        anticipating: '#f97316',
+        standing: '#06b6d4',
+        seated: '#a855f7',
+        border: 'rgba(255, 255, 255, 0.4)',
+        hoverBorder: 'rgba(255, 255, 0, 0.9)'
+    },
+    retro: {
+        idle: '#dc2626',
+        anticipating: '#f59e0b',
+        standing: '#16a34a',
+        seated: '#be123c',
+        border: 'rgba(255, 255, 200, 0.4)',
+        hoverBorder: 'rgba(255, 255, 100, 0.95)'
+    }
+};
 
 // Performance optimization
 let sectorPaths = [];
@@ -441,16 +470,25 @@ function getSectorGeometry(sectorId, totalSectors) {
 function getSectorColor(sector) {
     const state = sector.state;
     const energy = sector.energy;
+    const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
+    
+    // Helper to convert hex to rgba with alpha
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
     
     switch (state) {
         case 'idle':
-            return `rgba(100, 100, 150, ${0.5 + energy * 0.5})`;
+            return hexToRgba(theme.idle, 0.5 + energy * 0.5);
         case 'anticipating':
-            return `rgba(255, 200, 0, ${0.7 + energy * 0.3})`;
+            return hexToRgba(theme.anticipating, 0.7 + energy * 0.3);
         case 'standing':
-            return `rgba(0, 255, 100, ${0.8 + energy * 0.2})`;
+            return hexToRgba(theme.standing, 0.8 + energy * 0.2);
         case 'seated':
-            return `rgba(80, 80, 120, ${0.4 + energy * 0.4})`;
+            return hexToRgba(theme.seated, 0.4 + energy * 0.4);
         default:
             return 'rgba(100, 100, 100, 0.5)';
     }
@@ -461,6 +499,7 @@ function getSectorColor(sector) {
  */
 function drawSector(sector, index, totalSectors) {
     const geom = getSectorGeometry(index, totalSectors);
+    const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
     
     // Check if this sector is hovered
     const isHovered = index === hoveredSector;
@@ -477,7 +516,7 @@ function drawSector(sector, index, totalSectors) {
         }
         
         // Border
-        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke(geom.path);
     } else {
@@ -500,7 +539,7 @@ function drawSector(sector, index, totalSectors) {
             ctx.fill();
         }
         
-        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke();
     }
@@ -1037,7 +1076,9 @@ function setupInputHandlers() {
     const soundToggle = document.getElementById('sound-toggle');
     const soundTogglePause = document.getElementById('sound-toggle-pause');
     const fieldTypeSelect = document.getElementById('field-type-select');
-    fieldType = fieldTypeSelect ? fieldTypeSelect.value : null;
+    const stadiumTypeSelect = document.getElementById('stadium-type-select');
+    fieldType = fieldTypeSelect ? fieldTypeSelect.value : 'soccer';
+    stadiumType = stadiumTypeSelect ? stadiumTypeSelect.value : 'classic';
 
     soundToggle.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
@@ -1054,14 +1095,26 @@ function setupInputHandlers() {
         console.log('Difficulty set to:', difficulty);
     });
 
-    fieldTypeSelect.addEventListener('change', (e) => {
-        fieldType = e.target.value;
-        resetFieldGradients();
+    if (fieldTypeSelect) {
+        fieldTypeSelect.addEventListener('change', (e) => {
+            fieldType = e.target.value;
+            resetFieldGradients();
 
-        if (gameState) {
-            render();
-        }
-    });
+            if (gameState) {
+                render();
+            }
+        });
+    }
+
+    if (stadiumTypeSelect) {
+        stadiumTypeSelect.addEventListener('change', (e) => {
+            stadiumType = e.target.value;
+            
+            if (gameState) {
+                render();
+            }
+        });
+    }
 
     document.getElementById('volume-slider').addEventListener('input', (e) => {
         const volume = e.target.value;
@@ -1091,7 +1144,10 @@ function startGame() {
     // Get settings
     soundEnabled = document.getElementById('sound-toggle').checked;
     difficulty = document.getElementById('difficulty-select').value;
-    fieldType = document.getElementById('field-type-select').value;
+    const fieldTypeSelectElem = document.getElementById('field-type-select');
+    const stadiumTypeSelectElem = document.getElementById('stadium-type-select');
+    fieldType = fieldTypeSelectElem ? fieldTypeSelectElem.value : 'soccer';
+    stadiumType = stadiumTypeSelectElem ? stadiumTypeSelectElem.value : 'classic';
     resetFieldGradients();
 
     initGame();
