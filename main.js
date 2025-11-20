@@ -663,7 +663,7 @@ function gameLoop(timestamp) {
         updateGameState(cappedDt);
         
         // Update stats
-        updateStats();
+        updateStats(cappedDt);
     }
     
     // Always render (so we can see pause state)
