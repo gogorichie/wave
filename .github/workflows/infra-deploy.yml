@@ -1,0 +1,66 @@
+name: Deploy Infra (Bicep)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"     # only run when infra/ changes
+  workflow_dispatch:    # allow manual runs as well
+
+permissions:
+  id-token: write        # for OIDC login
+  contents: read
+
+env:
+  # === CHANGE THESE FOR YOUR ENVIRONMENT ===
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_RESOURCE_GROUP: "fanwave"
+  AZURE_LOCATION: "eastus2"
+  BICEP_FILE: "infra/main.bicep"
+
+jobs:
+  deploy-infra:
+    name: Deploy Bicep Infra
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}  # from your federated credential app registration
+
+      - name: Set up Azure CLI
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            echo "Azure CLI version:"
+            az version
+
+      # OPTIONAL: ensure resource group exists
+      - name: Ensure resource group exists
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az group create \
+              --name "$AZURE_RESOURCE_GROUP" \
+              --location "$AZURE_LOCATION"
+
+      - name: Deploy Bicep to resource group
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az deployment group create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --template-file "$BICEP_FILE" \
+              --parameters \
+                staticSites_fanwave_name='fanwave'
