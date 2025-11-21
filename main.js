@@ -335,7 +335,9 @@ function setupHighDPICanvas(canvas, ctx, container) {
     canvas.width = rect.width * devicePixelRatio;
     canvas.height = rect.height * devicePixelRatio;
     
-    // Scale context to ensure correct drawing operations
+    // Reset transform and scale context to ensure correct drawing operations
+    // This is crucial for resize events to prevent accumulated scaling
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(devicePixelRatio, devicePixelRatio);
     
     return { width: rect.width, height: rect.height };
@@ -396,10 +398,14 @@ function setupCanvas() {
         precomputeSectorPaths(gameState ? gameState.sectors.length : 16, 
                             newDimensions.width / 2, newDimensions.height / 2);
         
+        // Invalidate cached gradient so it gets recreated with new dimensions
+        fieldGradient = null;
+        
         // Update offscreen canvas size
         const devicePixelRatio = window.devicePixelRatio || 1;
         offscreenCanvas.width = newDimensions.width * devicePixelRatio;
         offscreenCanvas.height = newDimensions.height * devicePixelRatio;
+        offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
     }, 150);
     
