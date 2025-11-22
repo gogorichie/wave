@@ -25,6 +25,8 @@ let difficulty = 'medium';
 let hoveredSector = -1;
 let fieldType = 'soccer';
 let stadiumType = 'classic';
+let eventIntervals = [];
+let activeEventIndicators = [];
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -351,6 +353,20 @@ function handleGameEvent(event) {
             playSound('fail');
             currentStreak = 0;
             break;
+        case 'mascot':
+            if (event.data && typeof event.data.sector === 'number') {
+                showNotification(`Mascot distraction near sector ${event.data.sector}!`, 'failure');
+            } else {
+                showNotification('Mascot distraction!', 'failure');
+            }
+            addEventIndicator('mascot', event.data || {});
+            playSound('alert');
+            break;
+        case 'scoreboard':
+            showNotification('Scoreboard hype! Crowd energy boosted.', 'success');
+            addEventIndicator('scoreboard', event.data || {});
+            playSound('powerup');
+            break;
     }
 }
 
@@ -377,6 +393,18 @@ function playSound(type) {
     if (!soundEnabled) return;
     // Placeholder for Web Audio API implementation
     console.log('Play sound:', type);
+}
+
+/**
+ * Add an on-canvas indicator for special events
+ */
+function addEventIndicator(type, data = {}) {
+    activeEventIndicators.push({
+        type,
+        data,
+        start: performance.now(),
+        duration: type === 'mascot' ? 2800 : 2200
+    });
 }
 
 /**
@@ -486,45 +514,55 @@ function boostSector(sectorId) {
 }
 
 /**
- * Save game to localStorage
+ * Trigger external stadium events (mascot/scoreboard)
  */
-function saveGame() {
+function triggerStadiumEvent(eventType, sectorId = null) {
     try {
-        let saveData;
         if (useMockEngine) {
-            saveData = mockGameAPI.save_game();
+            mockGameAPI.trigger_event(eventType, sectorId);
         } else {
-            saveData = pyodide.runPython(`save_game()`);
+            pyodide.globals.set('event_type', eventType);
+            if (sectorId === null || sectorId === undefined) {
+                pyodide.runPython('trigger_event(event_type)');
+            } else {
+                pyodide.globals.set('sector_id', sectorId);
+                pyodide.runPython('trigger_event(event_type, sector_id)');
+            }
         }
-        localStorage.setItem('wave_game_save', saveData);
-        showNotification('Game Saved!', 'success');
     } catch (error) {
-        console.error('Failed to save game:', error);
-        showNotification('Save Failed!', 'failure');
+        console.error('Failed to trigger event:', error);
     }
 }
 
 /**
- * Load game from localStorage
+ * Start and manage ambient event timers
  */
-function loadGame() {
-    try {
-        const saveData = localStorage.getItem('wave_game_save');
-        if (saveData) {
-            if (useMockEngine) {
-                mockGameAPI.load_game(saveData);
-            } else {
-                pyodide.globals.set('save_data', saveData);
-                pyodide.runPython(`load_game(save_data)`);
-            }
-            showNotification('Game Loaded!', 'success');
-        } else {
-            showNotification('No save found!', 'failure');
-        }
-    } catch (error) {
-        console.error('Failed to load game:', error);
-        showNotification('Load Failed!', 'failure');
-    }
+function clearEventTimers() {
+    eventIntervals.forEach(interval => clearInterval(interval));
+    eventIntervals = [];
+}
+
+function startEventTimers() {
+    clearEventTimers();
+
+    // Periodic scoreboard hype
+    const scoreboardInterval = setInterval(() => {
+        if (!isGameRunning || isPaused || !gameState) return;
+        triggerStadiumEvent('scoreboard');
+    }, 45000);
+
+    // Occasional mascot distraction aimed at random sector
+    const mascotInterval = setInterval(() => {
+        if (!isGameRunning || isPaused || !gameState) return;
+        const target = Math.floor(Math.random() * gameState.sectors.length);
+        triggerStadiumEvent('mascot', target);
+    }, 30000);
+
+    eventIntervals.push(scoreboardInterval, mascotInterval);
+}
+
+function resetEventIndicators() {
+    activeEventIndicators = [];
 }
 
 /**
@@ -1076,6 +1114,61 @@ function drawField() {
     }
 }
 
+function drawEventIndicators() {
+    if (!gameState || activeEventIndicators.length === 0) return;
+
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const centerX = canvas.width / (2 * devicePixelRatio);
+    const centerY = canvas.height / (2 * devicePixelRatio);
+
+    const remainingIndicators = [];
+    const now = performance.now();
+
+    activeEventIndicators.forEach(indicator => {
+        const progress = (now - indicator.start) / indicator.duration;
+        if (progress >= 1) {
+            return;
+        }
+
+        let x = centerX;
+        let y = centerY - STADIUM_RADIUS * 0.4;
+
+        if (indicator.type === 'mascot' && typeof indicator.data?.sector === 'number') {
+            const geom = getSectorGeometry(indicator.data.sector, gameState.sectors.length);
+            const radius = (geom.innerRadius + geom.outerRadius) / 2;
+            x = geom.centerX + Math.cos(geom.angle) * radius;
+            y = geom.centerY + Math.sin(geom.angle) * radius;
+        }
+
+        const label = indicator.type === 'mascot' ? 'Mascot' : 'Scoreboard';
+        const color = indicator.type === 'mascot'
+            ? 'rgba(244, 114, 182, 0.85)'
+            : 'rgba(56, 189, 248, 0.85)';
+        const floatOffset = progress * 16;
+
+        ctx.save();
+        ctx.globalAlpha = 1 - progress;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y - floatOffset, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x, y - floatOffset);
+        ctx.restore();
+
+        remainingIndicators.push(indicator);
+    });
+
+    activeEventIndicators = remainingIndicators;
+}
+
 /**
  * Render game frame (optimized for high-DPI and performance)
  */
@@ -1104,7 +1197,9 @@ function render() {
     sectors.forEach((sector, index) => {
         drawSector(sector, index, sectors.length);
     });
-    
+
+    drawEventIndicators();
+
     // Update HUD
     updateHUD();
 }
@@ -1185,6 +1280,7 @@ function stopGameLoop() {
         cancelAnimationFrame(animationId);
         animationId = null;
     }
+    clearEventTimers();
 }
 
 /**
@@ -1338,12 +1434,30 @@ function setupInputHandlers() {
     });
     
     // Button handlers
-    document.getElementById('save-btn').addEventListener('click', saveGame);
-    document.getElementById('load-btn').addEventListener('click', loadGame);
     document.getElementById('help-toggle').addEventListener('click', toggleHelp);
     document.getElementById('pause-btn').addEventListener('click', togglePause);
     document.getElementById('resume-btn').addEventListener('click', togglePause);
     document.getElementById('restart-btn').addEventListener('click', restartGame);
+    document.getElementById('setup-btn').addEventListener('click', returnToSetup);
+
+    const mascotBtn = document.getElementById('mascot-btn');
+    if (mascotBtn) {
+        mascotBtn.addEventListener('click', () => {
+            if (!gameState) return;
+            const targetSector = hoveredSector >= 0
+                ? hoveredSector
+                : Math.floor(Math.random() * gameState.sectors.length);
+            triggerStadiumEvent('mascot', targetSector);
+        });
+    }
+
+    const scoreboardBtn = document.getElementById('scoreboard-btn');
+    if (scoreboardBtn) {
+        scoreboardBtn.addEventListener('click', () => {
+            if (!gameState) return;
+            triggerStadiumEvent('scoreboard');
+        });
+    }
     
     // Settings handlers
     const soundToggle = document.getElementById('sound-toggle');
@@ -1422,8 +1536,10 @@ function startGame() {
     fieldType = fieldTypeSelectElem ? fieldTypeSelectElem.value : 'soccer';
     stadiumType = stadiumTypeSelectElem ? stadiumTypeSelectElem.value : 'classic';
     resetFieldGradients();
+    resetEventIndicators();
 
     initGame();
+    startEventTimers();
     startGameLoop();
 }
 
@@ -1452,8 +1568,45 @@ function restartGame() {
 
     // Re-initialize game
     resetFieldGradients();
+    resetEventIndicators();
     initGame();
+    startEventTimers();
     startGameLoop();
+}
+
+/**
+ * Return to the setup screen so players can change options
+ */
+function returnToSetup() {
+    stopGameLoop();
+    isPaused = false;
+    gameState = null;
+    hoveredSector = -1;
+    resetFieldGradients();
+    resetEventIndicators();
+
+    const pauseBtn = document.getElementById('pause-btn');
+    pauseBtn.textContent = '⏸';
+    pauseBtn.title = 'Pause Game';
+
+    document.getElementById('pause-overlay').classList.add('hidden');
+    document.getElementById('help-overlay').classList.add('hidden');
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('controls').classList.add('hidden');
+    document.getElementById('help-toggle').classList.add('hidden');
+    document.getElementById('pause-btn').classList.add('hidden');
+    document.getElementById('stats-panel').classList.add('hidden');
+    document.getElementById('game-title').classList.add('hidden');
+    document.getElementById('tutorial').classList.remove('hidden');
+
+    // Reset surface stats for the next run
+    document.getElementById('game-time').textContent = '0:00';
+    document.getElementById('accuracy').textContent = '100%';
+    document.getElementById('streak').textContent = '0';
+    document.getElementById('score').textContent = '0';
+    document.getElementById('combo').textContent = '0x';
+    document.getElementById('waves').textContent = '0';
+    document.getElementById('max-combo').textContent = '0x';
 }
 
 /**
