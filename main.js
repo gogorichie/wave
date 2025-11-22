@@ -81,6 +81,180 @@ let offscreenCtx = null;
 let resizeTimeout = null;
 let fieldGradients = {};
 
+// Performance tier and monitoring
+let performanceTier = 'high'; // 'low', 'medium', 'high'
+let effectivePixelRatio = 1;
+let isTabVisible = true;
+let lastFrameTime = 0;
+let frameCount = 0;
+let fpsHistory = [];
+const TARGET_FPS = 60;
+const LOW_FPS_THRESHOLD = 30;
+const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
+const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
+const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
+
+/**
+ * Get effective pixel ratio for a given performance tier
+ */
+function getEffectivePixelRatio(tier) {
+    const dpr = window.devicePixelRatio || 1;
+    switch (tier) {
+        case 'low':
+            return Math.min(dpr, 1);
+        case 'medium':
+            return Math.min(dpr, 1.5);
+        case 'high':
+        default:
+            return dpr;
+    }
+}
+
+/**
+ * Save performance tier to localStorage
+ */
+function savePerformanceTier() {
+    try {
+        localStorage.setItem('wave_performance_tier', performanceTier);
+    } catch (e) {
+        console.warn('Could not save performance tier to localStorage');
+    }
+}
+
+/**
+ * Detect device capabilities and set performance tier
+ */
+function detectPerformanceTier() {
+    const dpr = window.devicePixelRatio || 1;
+    const viewport = {
+        width: window.innerWidth,
+        height: window.innerHeight
+    };
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Calculate a performance score
+    let score = 100;
+    
+    // High DPR can be expensive (e.g., Retina displays)
+    if (dpr > 2) score -= 20;
+    else if (dpr > 1.5) score -= 10;
+    
+    // Small viewports typically indicate mobile devices
+    const viewportArea = viewport.width * viewport.height;
+    if (viewportArea < 500000) score -= 30; // ~700x700 or smaller
+    else if (viewportArea < 1000000) score -= 15; // ~1000x1000 or smaller
+    
+    // Mobile devices generally have less power
+    if (isMobile || isTouch) score -= 20;
+    
+    // Check if hardware concurrency is available (number of CPU cores)
+    if (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 4) {
+        score -= 15;
+    }
+    
+    // Determine tier based on score
+    if (score < PERFORMANCE_TIER_LOW_THRESHOLD) {
+        performanceTier = 'low';
+    } else if (score < PERFORMANCE_TIER_MEDIUM_THRESHOLD) {
+        performanceTier = 'medium';
+    } else {
+        performanceTier = 'high';
+    }
+    
+    effectivePixelRatio = getEffectivePixelRatio(performanceTier);
+    
+    console.log(`Performance tier: ${performanceTier} (score: ${score}, DPR: ${dpr} -> ${effectivePixelRatio})`);
+    
+    // Store in localStorage for consistency
+    savePerformanceTier();
+    
+    return performanceTier;
+}
+
+/**
+ * Monitor FPS and adjust performance tier if needed
+ */
+function monitorPerformance(timestamp) {
+    frameCount++;
+    
+    // Calculate FPS every second
+    if (timestamp - lastFrameTime >= 1000) {
+        const fps = frameCount;
+        fpsHistory.push(fps);
+        
+        // Keep only last 5 seconds of history
+        if (fpsHistory.length > 5) {
+            fpsHistory.shift();
+        }
+        
+        // Calculate average FPS
+        const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+        
+        // Auto-downgrade if consistently low FPS
+        if (avgFps < LOW_FPS_THRESHOLD && performanceTier !== 'low') {
+            console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
+            if (performanceTier === 'high') {
+                performanceTier = 'medium';
+            } else if (performanceTier === 'medium') {
+                performanceTier = 'low';
+            }
+            
+            effectivePixelRatio = getEffectivePixelRatio(performanceTier);
+            
+            // Save updated tier to localStorage
+            savePerformanceTier();
+            
+            // Trigger canvas resize to apply new DPR
+            const container = document.getElementById('game-container');
+            if (container && canvas && ctx) {
+                const dimensions = setupHighDPICanvas(canvas, ctx, container);
+                precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
+                                    dimensions.width / 2, dimensions.height / 2);
+            }
+        }
+        
+        frameCount = 0;
+        lastFrameTime = timestamp;
+    }
+}
+
+/**
+ * Setup Page Visibility API to handle tab backgrounding
+ */
+function setupVisibilityHandler() {
+    // Handle visibility change
+    document.addEventListener('visibilitychange', () => {
+        isTabVisible = !document.hidden;
+        
+        if (isTabVisible) {
+            console.log('Tab visible - resuming normal rendering');
+            // Reset lastTime to prevent large dt jump
+            lastTime = 0;
+            // Reset to 0 so first hidden frame after next hide will execute immediately
+            lastHiddenUpdateTime = 0;
+        } else {
+            console.log('Tab hidden - throttling rendering');
+            // Initialize hidden update time to current time to start throttling
+            lastHiddenUpdateTime = performance.now();
+        }
+    });
+}
+
+/**
+ * Determine if expensive effects should be rendered based on performance tier
+ */
+function shouldRenderExpensiveEffects() {
+    return performanceTier === 'high';
+}
+
+/**
+ * Determine if detailed animations should be rendered
+ */
+function shouldRenderDetailedAnimations() {
+    return performanceTier !== 'low';
+}
+
 /**
  * Initialize Pyodide and load Python game engine
  */
@@ -371,14 +545,15 @@ function debounce(func, wait) {
  * Setup high-DPI canvas with proper scaling
  */
 function setupHighDPICanvas(canvas, ctx, container) {
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    // Use effective pixel ratio based on performance tier
+    const devicePixelRatio = effectivePixelRatio;
     const rect = container.getBoundingClientRect();
     
     // Set display size (CSS pixels)
     canvas.style.width = rect.width + 'px';
     canvas.style.height = rect.height + 'px';
     
-    // Set actual size (device pixels)
+    // Set actual size (device pixels) - limited by performance tier
     canvas.width = rect.width * devicePixelRatio;
     canvas.height = rect.height * devicePixelRatio;
     
@@ -443,13 +618,18 @@ function setupCanvas() {
         precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
 
-        // Update offscreen canvas size
-        const devicePixelRatio = window.devicePixelRatio || 1;
+        // Update offscreen canvas size (only if used, which is minimal in current code)
+        const devicePixelRatio = effectivePixelRatio;
         offscreenCanvas.width = newDimensions.width * devicePixelRatio;
         offscreenCanvas.height = newDimensions.height * devicePixelRatio;
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
+        
+        // Force a redraw without full re-initialization
+        if (gameState) {
+            render();
+        }
     }, 150);
     
     // Handle resize
@@ -560,8 +740,9 @@ function drawSector(sector, index, totalSectors) {
         ctx.stroke();
     }
     
-    // Draw standing animation
-    if (sector.state === 'standing' || sector.state === 'anticipating') {
+    // Draw standing animation (only for medium and high performance tiers)
+    if (shouldRenderDetailedAnimations() && 
+        (sector.state === 'standing' || sector.state === 'anticipating')) {
         const heightMultiplier = sector.state === 'standing' ? 1.5 : 1.2;
         const extendedRadius = geom.outerRadius + SECTOR_HEIGHT * (heightMultiplier - 1);
         const centerX = geom.centerX || (canvas.width / (2 * (window.devicePixelRatio || 1)));
@@ -588,33 +769,42 @@ function drawSector(sector, index, totalSectors) {
     ctx.textBaseline = 'middle';
     ctx.fillText(index, textX, textY);
     
-    // Energy bar (enhanced visualization)
-    const barWidth = 30;
-    const barHeight = 5;
-    const barX = textX - barWidth / 2;
-    const barY = textY + 15;
-    
-    // Background bar
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(barX, barY, barWidth, barHeight);
-    
-    // Energy fill with color gradient
-    let energyColor;
-    if (sector.energy < 0.3) {
-        energyColor = '#f87171';
-    } else if (sector.energy < 0.6) {
-        energyColor = '#fbbf24';
-    } else {
-        energyColor = '#4ade80';
+    // Energy bar (simplified for low performance tier)
+    if (performanceTier !== 'low') {
+        const barWidth = 30;
+        const barHeight = 5;
+        const barX = textX - barWidth / 2;
+        const barY = textY + 15;
+        
+        // Background bar
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Energy fill with color gradient (only for high performance)
+        let energyColor;
+        if (shouldRenderExpensiveEffects()) {
+            if (sector.energy < 0.3) {
+                energyColor = '#f87171';
+            } else if (sector.energy < 0.6) {
+                energyColor = '#fbbf24';
+            } else {
+                energyColor = '#4ade80';
+            }
+        } else {
+            // Simplified color for medium performance
+            energyColor = sector.energy < 0.5 ? '#fbbf24' : '#4ade80';
+        }
+        
+        ctx.fillStyle = energyColor;
+        ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
+        
+        // Border for energy bar (only for high performance)
+        if (shouldRenderExpensiveEffects()) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+        }
     }
-    
-    ctx.fillStyle = energyColor;
-    ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
-    
-    // Border for energy bar
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
 }
 
 /**
@@ -670,17 +860,19 @@ function drawSoccerField(centerX, centerY, fieldRadius) {
     ctx.lineTo(centerX, centerY + fieldRadius);
     ctx.stroke();
 
-    // Penalty boxes
-    const boxWidth = fieldRadius * 0.7;
-    const boxHeight = fieldRadius * 0.18;
-    ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius, boxWidth, boxHeight);
-    ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius - boxHeight, boxWidth, boxHeight);
+    // Penalty boxes (skip for low performance)
+    if (performanceTier !== 'low') {
+        const boxWidth = fieldRadius * 0.7;
+        const boxHeight = fieldRadius * 0.18;
+        ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius, boxWidth, boxHeight);
+        ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius - boxHeight, boxWidth, boxHeight);
 
-    // Goal boxes
-    const goalBoxWidth = fieldRadius * 0.35;
-    const goalBoxHeight = fieldRadius * 0.08;
-    ctx.strokeRect(centerX - goalBoxWidth / 2, centerY - fieldRadius, goalBoxWidth, goalBoxHeight);
-    ctx.strokeRect(centerX - goalBoxWidth / 2, centerY + fieldRadius - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+        // Goal boxes
+        const goalBoxWidth = fieldRadius * 0.35;
+        const goalBoxHeight = fieldRadius * 0.08;
+        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY - fieldRadius, goalBoxWidth, goalBoxHeight);
+        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY + fieldRadius - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+    }
 
     ctx.restore();
 }
@@ -821,8 +1013,8 @@ function drawFootballField(centerX, centerY, fieldRadius) {
     ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
     ctx.clip();
 
-    // Alternating stripes
-    const stripeCount = 10;
+    // Alternating stripes (simplified for low performance)
+    const stripeCount = performanceTier === 'low' ? 5 : 10;
     const stripeWidth = fieldWidth / stripeCount;
     for (let i = 0; i < stripeCount; i++) {
         ctx.fillStyle = i % 2 === 0 ? 'rgba(26, 96, 38, 0.85)' : 'rgba(35, 128, 50, 0.85)';
@@ -847,16 +1039,18 @@ function drawFootballField(centerX, centerY, fieldRadius) {
         ctx.stroke();
     }
 
-    // Hash marks
-    const hashMarkSpacing = fieldWidth / 14;
-    for (let i = 1; i < 14; i++) {
-        const x = left + i * hashMarkSpacing;
-        for (let j = 1; j < yardLineCount; j++) {
-            const y = top + (j / yardLineCount) * fieldHeight;
-            ctx.beginPath();
-            ctx.moveTo(x, y - 4);
-            ctx.lineTo(x, y + 4);
-            ctx.stroke();
+    // Hash marks (skip for low performance)
+    if (performanceTier !== 'low') {
+        const hashMarkSpacing = fieldWidth / 14;
+        for (let i = 1; i < 14; i++) {
+            const x = left + i * hashMarkSpacing;
+            for (let j = 1; j < yardLineCount; j++) {
+                const y = top + (j / yardLineCount) * fieldHeight;
+                ctx.beginPath();
+                ctx.moveTo(x, y - 4);
+                ctx.lineTo(x, y + 4);
+                ctx.stroke();
+            }
         }
     }
 
@@ -930,14 +1124,30 @@ function updateHUD() {
 /**
  * Game loop
  */
+let lastHiddenUpdateTime = 0;
 function gameLoop(timestamp) {
     if (!isGameRunning) return;
+    
+    // Monitor performance
+    monitorPerformance(timestamp);
     
     const dt = lastTime ? (timestamp - lastTime) / 1000 : 0;
     lastTime = timestamp;
     
     // Cap dt to prevent large jumps
     const cappedDt = Math.min(dt, 0.1);
+    
+    // Throttle updates when tab is hidden (reduce to ~5 FPS)
+    if (!isTabVisible && !isPaused) {
+        // Only update every HIDDEN_TAB_UPDATE_INTERVAL when hidden
+        const timeSinceLastHiddenUpdate = timestamp - lastHiddenUpdateTime;
+        if (timeSinceLastHiddenUpdate < HIDDEN_TAB_UPDATE_INTERVAL) {
+            // Skip this frame but continue loop
+            animationId = requestAnimationFrame(gameLoop);
+            return;
+        }
+        lastHiddenUpdateTime = timestamp;
+    }
     
     // Only update if not paused
     if (!isPaused) {
@@ -1251,6 +1461,12 @@ function restartGame() {
  */
 async function main() {
     console.log('Initializing Stadium Wave Game...');
+    
+    // Detect device capabilities and set performance tier
+    detectPerformanceTier();
+    
+    // Setup visibility handler for tab backgrounding
+    setupVisibilityHandler();
     
     // Setup canvas
     setupCanvas();
