@@ -374,18 +374,24 @@ function setupHighDPICanvas(canvas, ctx, container) {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const rect = container.getBoundingClientRect();
     
-    // Set display size (CSS pixels)
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
+    // Calculate display dimensions
+    const displayWidth = rect.width;
+    const displayHeight = rect.height;
     
-    // Set actual size (device pixels)
-    canvas.width = rect.width * devicePixelRatio;
-    canvas.height = rect.height * devicePixelRatio;
+    // Set display size (CSS pixels) - canvas will fill container
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
+    
+    // Set actual size in device pixels for high-DPI displays
+    canvas.width = Math.floor(displayWidth * devicePixelRatio);
+    canvas.height = Math.floor(displayHeight * devicePixelRatio);
     
     // Scale context to ensure correct drawing operations
+    // This maintains the coordinate system in CSS pixels
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform first
     ctx.scale(devicePixelRatio, devicePixelRatio);
     
-    return { width: rect.width, height: rect.height };
+    return { width: displayWidth, height: displayHeight };
 }
 
 /**
@@ -445,15 +451,25 @@ function setupCanvas() {
 
         // Update offscreen canvas size
         const devicePixelRatio = window.devicePixelRatio || 1;
-        offscreenCanvas.width = newDimensions.width * devicePixelRatio;
-        offscreenCanvas.height = newDimensions.height * devicePixelRatio;
+        offscreenCanvas.width = Math.floor(newDimensions.width * devicePixelRatio);
+        offscreenCanvas.height = Math.floor(newDimensions.height * devicePixelRatio);
+        offscreenCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
+        
+        // Force a render to show updated canvas immediately
+        if (gameState && isGameRunning) {
+            render();
+        }
     }, 150);
     
     // Handle resize
     window.addEventListener('resize', debouncedResize);
+    window.addEventListener('orientationchange', () => {
+        // Small delay to let the browser update viewport
+        setTimeout(debouncedResize, 100);
+    });
 }
 
 /**
