@@ -183,12 +183,17 @@ class TestWaveGame:
         # Test mascot distraction
         game.trigger_event('mascot', 3)
         assert game.sectors[3].distractions > 0
-        
+
         # Test scoreboard boost
         initial_energy = [s.energy for s in game.sectors]
         game.trigger_event('scoreboard')
         for i, sector in enumerate(game.sectors):
             assert sector.energy >= initial_energy[i]
+
+        events = game.get_events()
+        types = {event['type'] for event in events}
+        assert 'mascot' in types
+        assert 'scoreboard' in types
 
 
 class TestGameAPI:
@@ -227,6 +232,16 @@ class TestGameAPI:
         result = get_game_state()
         state = json.loads(result)
         assert 'sectors' in state
+
+    def test_trigger_event_function(self):
+        """Test trigger_event API function"""
+        from game_engine import init_game, trigger_event, get_events
+
+        init_game(8)
+        trigger_event('scoreboard')
+
+        events = json.loads(get_events())
+        assert any(event['type'] == 'scoreboard' for event in events)
         
     def test_save_load_functions(self):
         """Test save_game and load_game API functions"""

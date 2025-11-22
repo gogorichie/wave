@@ -212,10 +212,23 @@ class WaveGame:
                 for i in range(-1, 2):
                     idx = (sector_id + i) % self.num_sectors
                     self.sectors[idx].add_distraction(0.3)
+            affected = []
+            if sector_id is not None:
+                affected = [((sector_id + i) % self.num_sectors) for i in range(-1, 2)]
+
+            self.schedule_event('mascot', {
+                'sector': sector_id,
+                'affected': affected,
+                'effect': 'distraction'
+            })
         elif event_type == 'scoreboard':
             # Scoreboard boosts all sectors
             for sector in self.sectors:
                 sector.boost_energy(0.2)
+            self.schedule_event('scoreboard', {
+                'boost': 0.2,
+                'effect': 'energy'
+            })
                 
     def schedule_event(self, event_type: str, data=None):
         """Schedule event for processing"""
@@ -304,6 +317,12 @@ def get_game_state() -> str:
 def get_events() -> str:
     """Get pending events"""
     return json.dumps(game.get_events())
+
+
+def trigger_event(event_type: str, sector_id: Optional[int] = None) -> str:
+    """Trigger an external stadium event"""
+    game.trigger_event(event_type, sector_id)
+    return json.dumps({'status': 'triggered', 'event': event_type, 'sector': sector_id})
 
 
 def save_game() -> str:

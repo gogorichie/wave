@@ -196,6 +196,33 @@ class MockWaveGame {
         }
     }
 
+    trigger_event(event_type, sector_id = null) {
+        if (event_type === 'mascot') {
+            if (sector_id !== null && sector_id !== undefined) {
+                for (let i = -1; i <= 1; i++) {
+                    const idx = (sector_id + i + this.num_sectors) % this.num_sectors;
+                    this.sectors[idx].distractions = Math.min(1.0, this.sectors[idx].distractions + 0.3);
+                }
+            }
+
+            const affected = sector_id === null || sector_id === undefined
+                ? []
+                : [-1, 0, 1].map(i => (sector_id + i + this.num_sectors) % this.num_sectors);
+
+            this.schedule_event('mascot', {
+                sector: sector_id,
+                affected,
+                effect: 'distraction'
+            });
+        } else if (event_type === 'scoreboard') {
+            this.sectors.forEach(sector => sector.boost_energy(0.2));
+            this.schedule_event('scoreboard', {
+                boost: 0.2,
+                effect: 'energy'
+            });
+        }
+    }
+
     schedule_event(event_type, data = null) {
         this.events.push({
             type: event_type,
@@ -276,7 +303,7 @@ export const mockGameAPI = {
     save_game() {
         return this.game.save_state();
     },
-    
+
     load_game(save_data) {
         try {
             this.game.load_state(save_data);
@@ -284,5 +311,10 @@ export const mockGameAPI = {
         } catch (e) {
             return JSON.stringify({ status: 'error', message: e.message });
         }
+    },
+
+    trigger_event(event_type, sector_id = null) {
+        this.game.trigger_event(event_type, sector_id);
+        return JSON.stringify({ status: 'triggered', event: event_type, sector: sector_id });
     }
 };
