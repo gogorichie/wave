@@ -31,6 +31,8 @@ let activeEventIndicators = [];
 // Canvas settings
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
+const SOCCER_FIELD_ASPECT = 68 / 105; // width / height
+const FOOTBALL_FIELD_ASPECT = 53.3 / 120; // width / height
 
 // Stadium color themes
 const STADIUM_THEMES = {
@@ -893,43 +895,94 @@ function drawGrassBase(centerX, centerY, fieldRadius) {
     ctx.fill();
 }
 
-function drawSoccerField(centerX, centerY, fieldRadius) {
-    drawGrassBase(centerX, centerY, fieldRadius);
+function drawRectGrassBase(fieldRect) {
+    const gradientKey = `rect-${Math.round(fieldRect.width)}x${Math.round(fieldRect.height)}`;
+    const gradient = getFieldGradient(gradientKey, () => {
+        const baseGradient = ctx.createLinearGradient(
+            fieldRect.left,
+            fieldRect.top,
+            fieldRect.left,
+            fieldRect.top + fieldRect.height
+        );
+        baseGradient.addColorStop(0, '#2d5016');
+        baseGradient.addColorStop(1, '#1a3d0a');
+        return baseGradient;
+    });
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(fieldRect.left, fieldRect.top, fieldRect.width, fieldRect.height);
+}
+
+function drawSoccerField(centerX, centerY, fieldRect) {
+    drawRectGrassBase(fieldRect);
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.rect(fieldRect.left, fieldRect.top, fieldRect.width, fieldRect.height);
     ctx.clip();
 
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.lineWidth = 2;
 
+    const halfWidth = fieldRect.width / 2;
+    const halfHeight = fieldRect.height / 2;
+    const circleRadius = Math.min(halfWidth, halfHeight) * 0.3;
+    const fieldTop = fieldRect.top;
+    const fieldBottom = fieldRect.top + fieldRect.height;
+
     // Center circle
     ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2);
     ctx.stroke();
 
     // Center line
     ctx.beginPath();
-    ctx.moveTo(centerX, centerY - fieldRadius);
-    ctx.lineTo(centerX, centerY + fieldRadius);
+    ctx.moveTo(centerX, fieldTop);
+    ctx.lineTo(centerX, fieldBottom);
     ctx.stroke();
 
     // Penalty boxes (skip for low performance)
     if (performanceTier !== 'low') {
-        const boxWidth = fieldRadius * 0.7;
-        const boxHeight = fieldRadius * 0.18;
-        ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius, boxWidth, boxHeight);
-        ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius - boxHeight, boxWidth, boxHeight);
+        const boxWidth = fieldRect.width * 0.35;
+        const boxHeight = fieldRect.height * 0.09;
+        ctx.strokeRect(centerX - boxWidth / 2, fieldTop, boxWidth, boxHeight);
+        ctx.strokeRect(centerX - boxWidth / 2, fieldBottom - boxHeight, boxWidth, boxHeight);
 
         // Goal boxes
-        const goalBoxWidth = fieldRadius * 0.35;
-        const goalBoxHeight = fieldRadius * 0.08;
-        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY - fieldRadius, goalBoxWidth, goalBoxHeight);
-        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY + fieldRadius - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+        const goalBoxWidth = fieldRect.width * 0.175;
+        const goalBoxHeight = fieldRect.height * 0.04;
+        ctx.strokeRect(centerX - goalBoxWidth / 2, fieldTop, goalBoxWidth, goalBoxHeight);
+        ctx.strokeRect(centerX - goalBoxWidth / 2, fieldBottom - goalBoxHeight, goalBoxWidth, goalBoxHeight);
     }
 
     ctx.restore();
+}
+
+function getRectangularField(centerX, centerY, fieldRadius, targetAspect = null) {
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const canvasWidth = canvas.width / devicePixelRatio;
+    const canvasHeight = canvas.height / devicePixelRatio;
+    const canvasAspect = canvasWidth / canvasHeight || 1;
+    const aspect = targetAspect || canvasAspect;
+
+    // Match canvas aspect ratio while fitting inside the available circular area
+    const baseScale = (2 * fieldRadius) / Math.sqrt(aspect * aspect + 1);
+    let fieldHeight = baseScale;
+    let fieldWidth = baseScale * aspect;
+
+    // Ensure the rectangle stays inside the visible canvas bounds with a small margin
+    const maxWidth = canvasWidth - 20;
+    const maxHeight = canvasHeight - 20;
+    const scale = Math.min(1, maxWidth / fieldWidth, maxHeight / fieldHeight);
+    fieldWidth *= scale;
+    fieldHeight *= scale;
+
+    return {
+        width: fieldWidth,
+        height: fieldHeight,
+        left: centerX - fieldWidth / 2,
+        top: centerY - fieldHeight / 2
+    };
 }
 
 function drawBaseballField(centerX, centerY, fieldRadius) {
@@ -1055,17 +1108,17 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.restore();
 }
 
-function drawFootballField(centerX, centerY, fieldRadius) {
-    drawGrassBase(centerX, centerY, fieldRadius);
+function drawFootballField(centerX, centerY, fieldRect) {
+    drawRectGrassBase(fieldRect);
 
-    const fieldWidth = fieldRadius * 1.6;
-    const fieldHeight = fieldRadius * 0.9;
-    const top = centerY - fieldHeight / 2;
-    const left = centerX - fieldWidth / 2;
+    const fieldWidth = fieldRect.width;
+    const fieldHeight = fieldRect.height;
+    const top = fieldRect.top;
+    const left = fieldRect.left;
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.rect(left, top, fieldWidth, fieldHeight);
     ctx.clip();
 
     // Alternating stripes (simplified for low performance)
@@ -1123,10 +1176,18 @@ function drawField() {
             drawBaseballField(centerX, centerY, fieldRadius);
             break;
         case 'football':
-            drawFootballField(centerX, centerY, fieldRadius);
+            drawFootballField(
+                centerX,
+                centerY,
+                getRectangularField(centerX, centerY, fieldRadius, FOOTBALL_FIELD_ASPECT)
+            );
             break;
         default:
-            drawSoccerField(centerX, centerY, fieldRadius);
+            drawSoccerField(
+                centerX,
+                centerY,
+                getRectangularField(centerX, centerY, fieldRadius, SOCCER_FIELD_ASPECT)
+            );
             break;
     }
 }
