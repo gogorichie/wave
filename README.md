@@ -3,8 +3,17 @@
 A browser-based interactive game where players orchestrate the stadium "wave" by coordinating with AI-controlled crowd sectors to achieve synchronized animations and earn combo points.
 
 [![.github/workflows/ci-cd.yml](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gogorichie/wave/actions/workflows/ci-cd.yml)
-  ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-closed/gogorichie/wave)
- ![GitHub top language](https://img.shields.io/github/languages/top/gogorichie/wave) ![GitHub Release](https://img.shields.io/github/v/release/gogorichie/wave)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-closed/gogorichie/wave)
+![GitHub top language](https://img.shields.io/github/languages/top/gogorichie/wave)
+![GitHub Release](https://img.shields.io/github/v/release/gogorichie/wave)
+
+## Screenshots
+
+### Welcome Screen
+![Game Welcome Screen](https://github.com/user-attachments/assets/f339b050-8a71-4e7e-a0a4-ba511caa75d6)
+
+### Game in Action
+![Game Playing Screen](https://github.com/user-attachments/assets/3fbca810-4e45-4d0c-8d02-9f8cf51420f6)
 
 ## Features
 
@@ -37,7 +46,7 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 ### Prerequisites
 
-- Node.js 16+ and npm
+- Node.js 20+ and npm 10+
 - Modern web browser (Chrome, Firefox, Safari, Edge)
 
 ### Setup
@@ -117,7 +126,6 @@ npm run test:e2e
 ### Tips
 
 - Watch the energy bars under sector numbers
-
 - Low energy sectors (red/yellow bars) need boosting
 - Timing is key - sectors must be in idle or seated state to start
 - Green indicates active wave participation
@@ -125,6 +133,7 @@ npm run test:e2e
 
 ## Project Structure
 
+```
 wave/
 ├── game_engine.py       # Python game logic and state management
 ├── mock_engine.js       # JavaScript fallback engine (same API as Python)
@@ -133,10 +142,11 @@ wave/
 ├── vite.config.js       # Vite bundler configuration
 ├── package.json         # Node dependencies and scripts
 ├── tests/
-│   ├── test_game_engine.py   # Python unit tests (20 tests)
+│   ├── test_game_engine.py   # Python unit tests (21 tests)
 │   └── e2e/
 │       └── game.spec.js       # Playwright E2E tests
 └── README.md
+```
 
 ## Game Design
 
