@@ -90,6 +90,20 @@ let frameCount = 0;
 let fpsHistory = [];
 const TARGET_FPS = 60;
 const LOW_FPS_THRESHOLD = 30;
+const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
+const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
+const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
+
+/**
+ * Save performance tier to localStorage
+ */
+function savePerformanceTier() {
+    try {
+        localStorage.setItem('wave_performance_tier', performanceTier);
+    } catch (e) {
+        console.warn('Could not save performance tier to localStorage');
+    }
+}
 
 /**
  * Detect device capabilities and set performance tier
@@ -124,10 +138,10 @@ function detectPerformanceTier() {
     }
     
     // Determine tier based on score
-    if (score < 40) {
+    if (score < PERFORMANCE_TIER_LOW_THRESHOLD) {
         performanceTier = 'low';
         effectivePixelRatio = Math.min(dpr, 1); // Cap at 1x for low-end
-    } else if (score < 70) {
+    } else if (score < PERFORMANCE_TIER_MEDIUM_THRESHOLD) {
         performanceTier = 'medium';
         effectivePixelRatio = Math.min(dpr, 1.5); // Cap at 1.5x for medium
     } else {
@@ -138,11 +152,7 @@ function detectPerformanceTier() {
     console.log(`Performance tier: ${performanceTier} (score: ${score}, DPR: ${dpr} -> ${effectivePixelRatio})`);
     
     // Store in localStorage for consistency
-    try {
-        localStorage.setItem('wave_performance_tier', performanceTier);
-    } catch (e) {
-        console.warn('Could not save performance tier to localStorage');
-    }
+    savePerformanceTier();
     
     return performanceTier;
 }
@@ -176,6 +186,10 @@ function monitorPerformance(timestamp) {
                 performanceTier = 'low';
                 effectivePixelRatio = 1;
             }
+            
+            // Save updated tier to localStorage
+            savePerformanceTier();
+            
             // Trigger canvas resize to apply new DPR
             const container = document.getElementById('game-container');
             if (container && canvas && ctx) {
@@ -202,11 +216,12 @@ function setupVisibilityHandler() {
             console.log('Tab visible - resuming normal rendering');
             // Reset lastTime to prevent large dt jump
             lastTime = 0;
-            frameCount = 0;
-            lastFrameTime = 0;
+            // Reset to 0 so first hidden frame after next hide will execute immediately
+            lastHiddenUpdateTime = 0;
         } else {
             console.log('Tab hidden - throttling rendering');
-            // Don't completely stop the game, just throttle it
+            // Initialize hidden update time to current time to start throttling
+            lastHiddenUpdateTime = performance.now();
         }
     });
 }
@@ -1094,6 +1109,7 @@ function updateHUD() {
 /**
  * Game loop
  */
+let lastHiddenUpdateTime = 0;
 function gameLoop(timestamp) {
     if (!isGameRunning) return;
     
@@ -1108,12 +1124,14 @@ function gameLoop(timestamp) {
     
     // Throttle updates when tab is hidden (reduce to ~5 FPS)
     if (!isTabVisible && !isPaused) {
-        // Only update every 200ms when hidden
-        if (cappedDt < 0.2 && gameState) {
+        // Only update every HIDDEN_TAB_UPDATE_INTERVAL when hidden
+        const timeSinceLastHiddenUpdate = timestamp - lastHiddenUpdateTime;
+        if (timeSinceLastHiddenUpdate < HIDDEN_TAB_UPDATE_INTERVAL) {
             // Skip this frame but continue loop
             animationId = requestAnimationFrame(gameLoop);
             return;
         }
+        lastHiddenUpdateTime = timestamp;
     }
     
     // Only update if not paused
