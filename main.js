@@ -23,16 +23,237 @@ let currentStreak = 0;
 let soundEnabled = true;
 let difficulty = 'medium';
 let hoveredSector = -1;
+let fieldType = 'soccer';
+let stadiumType = 'classic';
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
+
+// Stadium color themes
+const STADIUM_THEMES = {
+    classic: {
+        idle: '#2563eb',
+        anticipating: '#fbbf24',
+        standing: '#10b981',
+        seated: '#6366f1',
+        border: 'rgba(255, 255, 255, 0.3)',
+        hoverBorder: 'rgba(255, 255, 255, 0.8)'
+    },
+    modern: {
+        idle: '#8b5cf6',
+        anticipating: '#f97316',
+        standing: '#06b6d4',
+        seated: '#a855f7',
+        border: 'rgba(255, 255, 255, 0.4)',
+        hoverBorder: 'rgba(255, 255, 0, 0.9)'
+    },
+    retro: {
+        idle: '#dc2626',
+        anticipating: '#f59e0b',
+        standing: '#16a34a',
+        seated: '#be123c',
+        border: 'rgba(255, 255, 200, 0.4)',
+        hoverBorder: 'rgba(255, 255, 100, 0.95)'
+    }
+};
+
+// Baseball field colors
+const BASEBALL_FIELD_COLORS = {
+    dirt: '#c68642',
+    basePath: '#f5e0c3',
+    base: '#f5f5f5',
+    pitchersMound: '#d9a066',
+    homePlate: '#ffffff',
+    foulLine: 'rgba(255, 255, 255, 0.8)'
+};
+
+// Baseball field layout constants
+const BASEBALL_COS_45 = Math.sqrt(2) / 2;  // ~0.707, for 45-degree angle calculations
+const BASEBALL_MOUND_DISTANCE_RATIO = 0.9;  // Pitcher's mound is 90% of base distance from home
+const BASEBALL_FOUL_LINE_EXTENT_H = 0.9;  // Horizontal extent of foul lines
+const BASEBALL_FOUL_LINE_EXTENT_V = 0.6;  // Vertical extent of foul lines
 
 // Performance optimization
 let sectorPaths = [];
 let offscreenCanvas = null;
 let offscreenCtx = null;
 let resizeTimeout = null;
+let fieldGradients = {};
+
+// Performance tier and monitoring
+let performanceTier = 'high'; // 'low', 'medium', 'high'
+let effectivePixelRatio = 1;
+let isTabVisible = true;
+let lastFrameTime = 0;
+let frameCount = 0;
+let fpsHistory = [];
+const TARGET_FPS = 60;
+const LOW_FPS_THRESHOLD = 30;
+const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
+const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
+const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
+
+/**
+ * Get effective pixel ratio for a given performance tier
+ */
+function getEffectivePixelRatio(tier) {
+    const dpr = window.devicePixelRatio || 1;
+    switch (tier) {
+        case 'low':
+            return Math.min(dpr, 1);
+        case 'medium':
+            return Math.min(dpr, 1.5);
+        case 'high':
+        default:
+            return dpr;
+    }
+}
+
+/**
+ * Save performance tier to localStorage
+ */
+function savePerformanceTier() {
+    try {
+        localStorage.setItem('wave_performance_tier', performanceTier);
+    } catch (e) {
+        console.warn('Could not save performance tier to localStorage');
+    }
+}
+
+/**
+ * Detect device capabilities and set performance tier
+ */
+function detectPerformanceTier() {
+    const dpr = window.devicePixelRatio || 1;
+    const viewport = {
+        width: window.innerWidth,
+        height: window.innerHeight
+    };
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Calculate a performance score
+    let score = 100;
+    
+    // High DPR can be expensive (e.g., Retina displays)
+    if (dpr > 2) score -= 20;
+    else if (dpr > 1.5) score -= 10;
+    
+    // Small viewports typically indicate mobile devices
+    const viewportArea = viewport.width * viewport.height;
+    if (viewportArea < 500000) score -= 30; // ~700x700 or smaller
+    else if (viewportArea < 1000000) score -= 15; // ~1000x1000 or smaller
+    
+    // Mobile devices generally have less power
+    if (isMobile || isTouch) score -= 20;
+    
+    // Check if hardware concurrency is available (number of CPU cores)
+    if (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 4) {
+        score -= 15;
+    }
+    
+    // Determine tier based on score
+    if (score < PERFORMANCE_TIER_LOW_THRESHOLD) {
+        performanceTier = 'low';
+    } else if (score < PERFORMANCE_TIER_MEDIUM_THRESHOLD) {
+        performanceTier = 'medium';
+    } else {
+        performanceTier = 'high';
+    }
+    
+    effectivePixelRatio = getEffectivePixelRatio(performanceTier);
+    
+    console.log(`Performance tier: ${performanceTier} (score: ${score}, DPR: ${dpr} -> ${effectivePixelRatio})`);
+    
+    // Store in localStorage for consistency
+    savePerformanceTier();
+    
+    return performanceTier;
+}
+
+/**
+ * Monitor FPS and adjust performance tier if needed
+ */
+function monitorPerformance(timestamp) {
+    frameCount++;
+    
+    // Calculate FPS every second
+    if (timestamp - lastFrameTime >= 1000) {
+        const fps = frameCount;
+        fpsHistory.push(fps);
+        
+        // Keep only last 5 seconds of history
+        if (fpsHistory.length > 5) {
+            fpsHistory.shift();
+        }
+        
+        // Calculate average FPS
+        const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+        
+        // Auto-downgrade if consistently low FPS
+        if (avgFps < LOW_FPS_THRESHOLD && performanceTier !== 'low') {
+            console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
+            if (performanceTier === 'high') {
+                performanceTier = 'medium';
+            } else if (performanceTier === 'medium') {
+                performanceTier = 'low';
+            }
+            
+            effectivePixelRatio = getEffectivePixelRatio(performanceTier);
+            
+            // Save updated tier to localStorage
+            savePerformanceTier();
+            
+            // Trigger canvas resize to apply new DPR
+            const container = document.getElementById('game-container');
+            if (container && canvas && ctx) {
+                const dimensions = setupHighDPICanvas(canvas, ctx, container);
+                precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
+                                    dimensions.width / 2, dimensions.height / 2);
+            }
+        }
+        
+        frameCount = 0;
+        lastFrameTime = timestamp;
+    }
+}
+
+/**
+ * Setup Page Visibility API to handle tab backgrounding
+ */
+function setupVisibilityHandler() {
+    // Handle visibility change
+    document.addEventListener('visibilitychange', () => {
+        isTabVisible = !document.hidden;
+        
+        if (isTabVisible) {
+            console.log('Tab visible - resuming normal rendering');
+            // Reset lastTime to prevent large dt jump
+            lastTime = 0;
+            // Reset to 0 so first hidden frame after next hide will execute immediately
+            lastHiddenUpdateTime = 0;
+        } else {
+            console.log('Tab hidden - throttling rendering');
+            // Initialize hidden update time to current time to start throttling
+            lastHiddenUpdateTime = performance.now();
+        }
+    });
+}
+
+/**
+ * Determine if expensive effects should be rendered based on performance tier
+ */
+function shouldRenderExpensiveEffects() {
+    return performanceTier === 'high';
+}
+
+/**
+ * Determine if detailed animations should be rendered
+ */
+function shouldRenderDetailedAnimations() {
+    return performanceTier !== 'low';
+}
 
 /**
  * Initialize Pyodide and load Python game engine
@@ -324,14 +545,15 @@ function debounce(func, wait) {
  * Setup high-DPI canvas with proper scaling
  */
 function setupHighDPICanvas(canvas, ctx, container) {
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    // Use effective pixel ratio based on performance tier
+    const devicePixelRatio = effectivePixelRatio;
     const rect = container.getBoundingClientRect();
     
     // Set display size (CSS pixels)
     canvas.style.width = rect.width + 'px';
     canvas.style.height = rect.height + 'px';
     
-    // Set actual size (device pixels)
+    // Set actual size (device pixels) - limited by performance tier
     canvas.width = rect.width * devicePixelRatio;
     canvas.height = rect.height * devicePixelRatio;
     
@@ -393,14 +615,21 @@ function setupCanvas() {
     // Debounced resize handler
     const debouncedResize = debounce(() => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
-        precomputeSectorPaths(gameState ? gameState.sectors.length : 16, 
+        precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
-        
-        // Update offscreen canvas size
-        const devicePixelRatio = window.devicePixelRatio || 1;
+
+        // Update offscreen canvas size (only if used, which is minimal in current code)
+        const devicePixelRatio = effectivePixelRatio;
         offscreenCanvas.width = newDimensions.width * devicePixelRatio;
         offscreenCanvas.height = newDimensions.height * devicePixelRatio;
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
+
+        resetFieldGradients();
+        
+        // Force a redraw without full re-initialization
+        if (gameState) {
+            render();
+        }
     }, 150);
     
     // Handle resize
@@ -437,16 +666,25 @@ function getSectorGeometry(sectorId, totalSectors) {
 function getSectorColor(sector) {
     const state = sector.state;
     const energy = sector.energy;
+    const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
+    
+    // Helper to convert hex to rgba with alpha
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
     
     switch (state) {
         case 'idle':
-            return `rgba(100, 100, 150, ${0.5 + energy * 0.5})`;
+            return hexToRgba(theme.idle, 0.5 + energy * 0.5);
         case 'anticipating':
-            return `rgba(255, 200, 0, ${0.7 + energy * 0.3})`;
+            return hexToRgba(theme.anticipating, 0.7 + energy * 0.3);
         case 'standing':
-            return `rgba(0, 255, 100, ${0.8 + energy * 0.2})`;
+            return hexToRgba(theme.standing, 0.8 + energy * 0.2);
         case 'seated':
-            return `rgba(80, 80, 120, ${0.4 + energy * 0.4})`;
+            return hexToRgba(theme.seated, 0.4 + energy * 0.4);
         default:
             return 'rgba(100, 100, 100, 0.5)';
     }
@@ -457,6 +695,7 @@ function getSectorColor(sector) {
  */
 function drawSector(sector, index, totalSectors) {
     const geom = getSectorGeometry(index, totalSectors);
+    const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
     
     // Check if this sector is hovered
     const isHovered = index === hoveredSector;
@@ -473,7 +712,7 @@ function drawSector(sector, index, totalSectors) {
         }
         
         // Border
-        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke(geom.path);
     } else {
@@ -496,13 +735,14 @@ function drawSector(sector, index, totalSectors) {
             ctx.fill();
         }
         
-        ctx.strokeStyle = isHovered ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)';
+        ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke();
     }
     
-    // Draw standing animation
-    if (sector.state === 'standing' || sector.state === 'anticipating') {
+    // Draw standing animation (only for medium and high performance tiers)
+    if (shouldRenderDetailedAnimations() && 
+        (sector.state === 'standing' || sector.state === 'anticipating')) {
         const heightMultiplier = sector.state === 'standing' ? 1.5 : 1.2;
         const extendedRadius = geom.outerRadius + SECTOR_HEIGHT * (heightMultiplier - 1);
         const centerX = geom.centerX || (canvas.width / (2 * (window.devicePixelRatio || 1)));
@@ -529,75 +769,311 @@ function drawSector(sector, index, totalSectors) {
     ctx.textBaseline = 'middle';
     ctx.fillText(index, textX, textY);
     
-    // Energy bar (enhanced visualization)
-    const barWidth = 30;
-    const barHeight = 5;
-    const barX = textX - barWidth / 2;
-    const barY = textY + 15;
-    
-    // Background bar
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(barX, barY, barWidth, barHeight);
-    
-    // Energy fill with color gradient
-    let energyColor;
-    if (sector.energy < 0.3) {
-        energyColor = '#f87171';
-    } else if (sector.energy < 0.6) {
-        energyColor = '#fbbf24';
-    } else {
-        energyColor = '#4ade80';
+    // Energy bar (simplified for low performance tier)
+    if (performanceTier !== 'low') {
+        const barWidth = 30;
+        const barHeight = 5;
+        const barX = textX - barWidth / 2;
+        const barY = textY + 15;
+        
+        // Background bar
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        // Energy fill with color gradient (only for high performance)
+        let energyColor;
+        if (shouldRenderExpensiveEffects()) {
+            if (sector.energy < 0.3) {
+                energyColor = '#f87171';
+            } else if (sector.energy < 0.6) {
+                energyColor = '#fbbf24';
+            } else {
+                energyColor = '#4ade80';
+            }
+        } else {
+            // Simplified color for medium performance
+            energyColor = sector.energy < 0.5 ? '#fbbf24' : '#4ade80';
+        }
+        
+        ctx.fillStyle = energyColor;
+        ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
+        
+        // Border for energy bar (only for high performance)
+        if (shouldRenderExpensiveEffects()) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+        }
     }
-    
-    ctx.fillStyle = energyColor;
-    ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
-    
-    // Border for energy bar
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barWidth, barHeight);
 }
 
 /**
  * Draw stadium field (cached gradients for better performance)
  */
-let fieldGradient = null;
+function resetFieldGradients() {
+    fieldGradients = {};
+}
+
+function getFieldGradient(key, builder) {
+    if (!fieldGradients[key]) {
+        fieldGradients[key] = builder();
+    }
+    return fieldGradients[key];
+}
+
+function drawGrassBase(centerX, centerY, fieldRadius) {
+    const gradient = getFieldGradient('base', () => {
+        const baseGradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, fieldRadius
+        );
+        baseGradient.addColorStop(0, '#2d5016');
+        baseGradient.addColorStop(1, '#1a3d0a');
+        return baseGradient;
+    });
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+}
+
+function drawSoccerField(centerX, centerY, fieldRadius) {
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+
+    // Center circle
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center line
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - fieldRadius);
+    ctx.lineTo(centerX, centerY + fieldRadius);
+    ctx.stroke();
+
+    // Penalty boxes (skip for low performance)
+    if (performanceTier !== 'low') {
+        const boxWidth = fieldRadius * 0.7;
+        const boxHeight = fieldRadius * 0.18;
+        ctx.strokeRect(centerX - boxWidth / 2, centerY - fieldRadius, boxWidth, boxHeight);
+        ctx.strokeRect(centerX - boxWidth / 2, centerY + fieldRadius - boxHeight, boxWidth, boxHeight);
+
+        // Goal boxes
+        const goalBoxWidth = fieldRadius * 0.35;
+        const goalBoxHeight = fieldRadius * 0.08;
+        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY - fieldRadius, goalBoxWidth, goalBoxHeight);
+        ctx.strokeRect(centerX - goalBoxWidth / 2, centerY + fieldRadius - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+    }
+
+    ctx.restore();
+}
+
+function drawBaseballField(centerX, centerY, fieldRadius) {
+    // Draw grass base for entire field
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Home plate is at the bottom, diamond extends upward
+    // Distance from center to home plate (shifted down)
+    const homePlateOffset = fieldRadius * 0.45;
+    const homePlateY = centerY + homePlateOffset;
+    const homePlateX = centerX;
+    
+    // Diamond dimensions - going counterclockwise from home
+    const baseDistance = fieldRadius * 0.5;
+    
+    // Base positions (counterclockwise from home at bottom)
+    // Home -> 1st (right) -> 2nd (top) -> 3rd (left) -> Home
+    const firstBaseX = homePlateX + baseDistance * BASEBALL_COS_45;  // 45 degrees
+    const firstBaseY = homePlateY - baseDistance * BASEBALL_COS_45;
+    
+    const secondBaseX = homePlateX;
+    const secondBaseY = homePlateY - baseDistance * BASEBALL_COS_45 * 2;  // Diagonal of diamond
+    
+    const thirdBaseX = homePlateX - baseDistance * BASEBALL_COS_45;
+    const thirdBaseY = homePlateY - baseDistance * BASEBALL_COS_45;
+    
+    // Draw dirt infield (diamond shape)
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY);
+    ctx.lineTo(firstBaseX, firstBaseY);
+    ctx.lineTo(secondBaseX, secondBaseY);
+    ctx.lineTo(thirdBaseX, thirdBaseY);
+    ctx.closePath();
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.dirt;
+    ctx.fill();
+    
+    // Draw foul lines from home plate spreading to top edge
+    ctx.strokeStyle = BASEBALL_FIELD_COLORS.foulLine;
+    ctx.lineWidth = 3;
+    
+    // Left foul line (3rd base line)
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY);
+    // Extend through 3rd base to edge
+    const leftFoulExtendX = homePlateX - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_H;
+    const leftFoulExtendY = centerY - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_V;
+    ctx.lineTo(leftFoulExtendX, leftFoulExtendY);
+    ctx.stroke();
+    
+    // Right foul line (1st base line)
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY);
+    // Extend through 1st base to edge
+    const rightFoulExtendX = homePlateX + fieldRadius * BASEBALL_FOUL_LINE_EXTENT_H;
+    const rightFoulExtendY = centerY - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_V;
+    ctx.lineTo(rightFoulExtendX, rightFoulExtendY);
+    ctx.stroke();
+    
+    // Draw base paths (connecting the bases)
+    ctx.strokeStyle = BASEBALL_FIELD_COLORS.basePath;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY);
+    ctx.lineTo(firstBaseX, firstBaseY);
+    ctx.lineTo(secondBaseX, secondBaseY);
+    ctx.lineTo(thirdBaseX, thirdBaseY);
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw bases (as white squares)
+    const baseSize = fieldRadius * 0.035;
+    
+    // First base
+    ctx.save();
+    ctx.translate(firstBaseX, firstBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Second base
+    ctx.save();
+    ctx.translate(secondBaseX, secondBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Third base
+    ctx.save();
+    ctx.translate(thirdBaseX, thirdBaseY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.base;
+    ctx.fillRect(-baseSize / 2, -baseSize / 2, baseSize, baseSize);
+    ctx.restore();
+    
+    // Pitcher's mound (between home and 2nd, realistic baseball proportions)
+    const moundX = homePlateX;
+    const moundY = homePlateY - baseDistance * BASEBALL_MOUND_DISTANCE_RATIO;
+    ctx.beginPath();
+    ctx.arc(moundX, moundY, fieldRadius * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.pitchersMound;
+    ctx.fill();
+    
+    // Home plate (pentagon shape pointing toward pitcher)
+    const plateWidth = fieldRadius * 0.06;
+    const plateHeight = fieldRadius * 0.05;
+    ctx.beginPath();
+    ctx.moveTo(homePlateX, homePlateY - plateHeight);  // Point toward pitcher
+    ctx.lineTo(homePlateX + plateWidth / 2, homePlateY);
+    ctx.lineTo(homePlateX + plateWidth / 2, homePlateY + plateHeight / 2);
+    ctx.lineTo(homePlateX - plateWidth / 2, homePlateY + plateHeight / 2);
+    ctx.lineTo(homePlateX - plateWidth / 2, homePlateY);
+    ctx.closePath();
+    ctx.fillStyle = BASEBALL_FIELD_COLORS.homePlate;
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+function drawFootballField(centerX, centerY, fieldRadius) {
+    drawGrassBase(centerX, centerY, fieldRadius);
+
+    const fieldWidth = fieldRadius * 1.6;
+    const fieldHeight = fieldRadius * 0.9;
+    const top = centerY - fieldHeight / 2;
+    const left = centerX - fieldWidth / 2;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Alternating stripes (simplified for low performance)
+    const stripeCount = performanceTier === 'low' ? 5 : 10;
+    const stripeWidth = fieldWidth / stripeCount;
+    for (let i = 0; i < stripeCount; i++) {
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(26, 96, 38, 0.85)' : 'rgba(35, 128, 50, 0.85)';
+        ctx.fillRect(left + i * stripeWidth, top, stripeWidth, fieldHeight);
+    }
+
+    // End zones
+    const endZoneHeight = fieldHeight * 0.12;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.fillRect(left, top, fieldWidth, endZoneHeight);
+    ctx.fillRect(left, top + fieldHeight - endZoneHeight, fieldWidth, endZoneHeight);
+
+    // Yard lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    const yardLineCount = 11;
+    for (let i = 0; i <= yardLineCount; i++) {
+        const y = top + (i / yardLineCount) * fieldHeight;
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(left + fieldWidth, y);
+        ctx.stroke();
+    }
+
+    // Hash marks (skip for low performance)
+    if (performanceTier !== 'low') {
+        const hashMarkSpacing = fieldWidth / 14;
+        for (let i = 1; i < 14; i++) {
+            const x = left + i * hashMarkSpacing;
+            for (let j = 1; j < yardLineCount; j++) {
+                const y = top + (j / yardLineCount) * fieldHeight;
+                ctx.beginPath();
+                ctx.moveTo(x, y - 4);
+                ctx.lineTo(x, y + 4);
+                ctx.stroke();
+            }
+        }
+    }
+
+    ctx.restore();
+}
 
 function drawField() {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
     const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
-    
-    // Create gradient once and reuse
-    if (!fieldGradient) {
-        fieldGradient = ctx.createRadialGradient(
-            centerX, centerY, 0,
-            centerX, centerY, fieldRadius
-        );
-        fieldGradient.addColorStop(0, '#2d5016');
-        fieldGradient.addColorStop(1, '#1a3d0a');
+
+    switch (fieldType) {
+        case 'baseball':
+            drawBaseballField(centerX, centerY, fieldRadius);
+            break;
+        case 'football':
+            drawFootballField(centerX, centerY, fieldRadius);
+            break;
+        default:
+            drawSoccerField(centerX, centerY, fieldRadius);
+            break;
     }
-    
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius, 0, Math.PI * 2);
-    ctx.fillStyle = fieldGradient;
-    ctx.fill();
-    
-    // Field lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 2;
-    
-    // Center circle
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, fieldRadius * 0.3, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Center line
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY - fieldRadius);
-    ctx.lineTo(centerX, centerY + fieldRadius);
-    ctx.stroke();
 }
 
 /**
@@ -648,14 +1124,30 @@ function updateHUD() {
 /**
  * Game loop
  */
+let lastHiddenUpdateTime = 0;
 function gameLoop(timestamp) {
     if (!isGameRunning) return;
+    
+    // Monitor performance
+    monitorPerformance(timestamp);
     
     const dt = lastTime ? (timestamp - lastTime) / 1000 : 0;
     lastTime = timestamp;
     
     // Cap dt to prevent large jumps
     const cappedDt = Math.min(dt, 0.1);
+    
+    // Throttle updates when tab is hidden (reduce to ~5 FPS)
+    if (!isTabVisible && !isPaused) {
+        // Only update every HIDDEN_TAB_UPDATE_INTERVAL when hidden
+        const timeSinceLastHiddenUpdate = timestamp - lastHiddenUpdateTime;
+        if (timeSinceLastHiddenUpdate < HIDDEN_TAB_UPDATE_INTERVAL) {
+            // Skip this frame but continue loop
+            animationId = requestAnimationFrame(gameLoop);
+            return;
+        }
+        lastHiddenUpdateTime = timestamp;
+    }
     
     // Only update if not paused
     if (!isPaused) {
@@ -856,7 +1348,11 @@ function setupInputHandlers() {
     // Settings handlers
     const soundToggle = document.getElementById('sound-toggle');
     const soundTogglePause = document.getElementById('sound-toggle-pause');
-    
+    const fieldTypeSelect = document.getElementById('field-type-select');
+    const stadiumTypeSelect = document.getElementById('stadium-type-select');
+    fieldType = fieldTypeSelect ? fieldTypeSelect.value : 'soccer';
+    stadiumType = stadiumTypeSelect ? stadiumTypeSelect.value : 'classic';
+
     soundToggle.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
         soundTogglePause.checked = soundEnabled;
@@ -871,7 +1367,28 @@ function setupInputHandlers() {
         difficulty = e.target.value;
         console.log('Difficulty set to:', difficulty);
     });
-    
+
+    if (fieldTypeSelect) {
+        fieldTypeSelect.addEventListener('change', (e) => {
+            fieldType = e.target.value;
+            resetFieldGradients();
+
+            if (gameState) {
+                render();
+            }
+        });
+    }
+
+    if (stadiumTypeSelect) {
+        stadiumTypeSelect.addEventListener('change', (e) => {
+            stadiumType = e.target.value;
+            
+            if (gameState) {
+                render();
+            }
+        });
+    }
+
     document.getElementById('volume-slider').addEventListener('input', (e) => {
         const volume = e.target.value;
         document.getElementById('volume-label').textContent = volume + '%';
@@ -900,7 +1417,12 @@ function startGame() {
     // Get settings
     soundEnabled = document.getElementById('sound-toggle').checked;
     difficulty = document.getElementById('difficulty-select').value;
-    
+    const fieldTypeSelectElem = document.getElementById('field-type-select');
+    const stadiumTypeSelectElem = document.getElementById('stadium-type-select');
+    fieldType = fieldTypeSelectElem ? fieldTypeSelectElem.value : 'soccer';
+    stadiumType = stadiumTypeSelectElem ? stadiumTypeSelectElem.value : 'classic';
+    resetFieldGradients();
+
     initGame();
     startGameLoop();
 }
@@ -927,8 +1449,9 @@ function restartGame() {
     const pauseBtn = document.getElementById('pause-btn');
     pauseBtn.textContent = '⏸';
     pauseBtn.title = 'Pause Game';
-    
+
     // Re-initialize game
+    resetFieldGradients();
     initGame();
     startGameLoop();
 }
@@ -938,6 +1461,12 @@ function restartGame() {
  */
 async function main() {
     console.log('Initializing Stadium Wave Game...');
+    
+    // Detect device capabilities and set performance tier
+    detectPerformanceTier();
+    
+    // Setup visibility handler for tab backgrounding
+    setupVisibilityHandler();
     
     // Setup canvas
     setupCanvas();

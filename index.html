@@ -38,11 +38,14 @@
             border-radius: 20px;
             box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         #game-canvas {
             width: 100%;
             height: 100%;
+            flex: 1;
             display: block;
             cursor: pointer;
         }
@@ -173,6 +176,8 @@
             padding: 40px;
             border-radius: 20px;
             max-width: 500px;
+            max-height: 90%;
+            overflow-y: auto;
             text-align: center;
             z-index: 50;
         }
@@ -213,6 +218,8 @@
             font-size: 1.3em;
             z-index: 60;
             animation: slideDown 0.3s ease-out;
+            max-width: 90%;
+            text-align: center;
         }
 
         @keyframes slideDown {
@@ -396,83 +403,246 @@
         .difficulty-medium { background: #fbbf24; color: #000; }
         .difficulty-hard { background: #f87171; color: #fff; }
 
-        /* Mobile Responsiveness */
+        /* Mobile Responsiveness - Base mobile styles */
         @media (max-width: 768px) {
+            #game-container {
+                width: 100vw;
+                height: 100vh;
+                height: calc(var(--vh, 1vh) * 100); /* Overrides above when --vh is set by JS to fix mobile viewport height */
+                max-height: none;
+                border-radius: 0;
+            }
+
             #game-title {
-                font-size: 2em;
-                top: 10px;
+                font-size: 1.8em;
+                top: 5px;
+                letter-spacing: 1px;
             }
 
             #hud {
-                top: 70px;
-                left: 10px;
-                right: 10px;
-                flex-direction: column;
-                gap: 10px;
+                top: 50px;
+                left: 5px;
+                right: 5px;
+                flex-direction: row;
+                gap: 5px;
+                flex-wrap: wrap;
             }
 
             .hud-panel {
-                padding: 10px 15px;
-                width: 100%;
+                padding: 8px 12px;
+                flex: 1 1 auto;
+                min-width: 0;
+            }
+
+            .hud-item {
+                margin: 3px 0;
+            }
+
+            .hud-label {
+                font-size: 0.75em;
             }
 
             .hud-value {
-                font-size: 1.2em;
-            }
-
-            #help-toggle, #pause-btn {
-                width: 35px;
-                height: 35px;
                 font-size: 1em;
             }
 
+            #help-toggle, #pause-btn {
+                width: 36px;
+                height: 36px;
+                font-size: 1em;
+                top: 5px;
+            }
+
             #pause-btn {
-                right: 60px;
+                right: 50px;
+            }
+
+            #help-toggle {
+                right: 5px;
             }
 
             #help-overlay {
-                right: 10px;
-                left: 10px;
-                top: 10px;
+                right: 5px;
+                left: 5px;
+                top: 50px;
                 max-width: none;
+                font-size: 0.85em;
+                padding: 12px 15px;
+            }
+
+            #help-overlay h3 {
+                font-size: 1em;
+                margin-bottom: 8px;
+            }
+
+            #help-overlay li {
+                margin: 3px 0;
+                font-size: 0.9em;
             }
 
             #stats-panel {
-                bottom: 80px;
-                left: 10px;
-                font-size: 0.8em;
-                padding: 10px 15px;
+                bottom: 70px;
+                left: 5px;
+                right: 5px;
+                font-size: 0.75em;
+                padding: 8px 12px;
+                display: flex;
+                justify-content: space-around;
+                background: rgba(0, 0, 0, 0.8);
+            }
+
+            #stats-panel .stat-item {
+                margin: 0 5px;
+                white-space: nowrap;
+                font-size: 0.9em;
             }
 
             #controls {
-                bottom: 10px;
+                bottom: 5px;
+                left: 5px;
+                right: 5px;
+                transform: none;
             }
 
             #controls button {
-                padding: 12px 20px;
-                font-size: 0.9em;
-                margin: 0 5px;
+                padding: 10px 16px;
+                font-size: 0.85em;
+                margin: 0 3px;
             }
 
             #tutorial {
-                max-width: 90%;
-                padding: 30px 20px;
+                max-width: 95%;
+                padding: 25px 20px;
+                max-height: 85%;
+            }
+
+            #tutorial h2 {
+                font-size: 1.5em;
+                margin-bottom: 15px;
+            }
+
+            #tutorial p {
+                margin: 10px 0;
+                font-size: 0.95em;
             }
 
             #pause-overlay {
-                max-width: 90%;
-                padding: 30px 20px;
+                max-width: 95%;
+                padding: 25px 20px;
+            }
+
+            #pause-overlay h2 {
+                font-size: 1.5em;
+            }
+
+            .settings-panel {
+                padding: 15px;
+                margin: 15px 0;
+            }
+
+            .settings-panel label {
+                font-size: 0.95em;
             }
         }
 
+        /* Small mobile devices - Additional refinements for smaller screens */
         @media (max-width: 480px) {
             #game-title {
                 font-size: 1.5em;
             }
 
+            .hud-panel {
+                padding: 6px 10px;
+            }
+
+            .hud-label {
+                font-size: 0.7em;
+            }
+
+            .hud-value {
+                font-size: 0.95em;
+            }
+
             #controls button {
-                padding: 10px 15px;
+                padding: 10px 12px;
+                font-size: 0.8em;
+                margin: 0 2px;
+            }
+
+            #tutorial h2 {
+                font-size: 1.3em;
+            }
+
+            #tutorial p {
+                font-size: 0.9em;
+            }
+
+            #stats-panel .stat-item {
                 font-size: 0.85em;
+            }
+
+            #notification {
+                font-size: 1em;
+                padding: 15px 25px;
+                top: 60px;
+            }
+        }
+
+        /* Landscape mobile optimization - Additive styles for landscape mode on mobile */
+        @media (max-width: 768px) and (max-height: 500px) and (orientation: landscape) {
+            #game-title {
+                font-size: 1.2em;
+                top: 3px;
+            }
+
+            #hud {
+                top: 30px;
+                left: 3px;
+                right: 3px;
+            }
+
+            .hud-panel {
+                padding: 5px 8px;
+            }
+
+            .hud-label {
+                font-size: 0.65em;
+            }
+
+            .hud-value {
+                font-size: 0.85em;
+            }
+
+            #help-toggle, #pause-btn {
+                width: 30px;
+                height: 30px;
+                font-size: 0.9em;
+                top: 3px;
+            }
+
+            #pause-btn {
+                right: 40px;
+            }
+
+            #stats-panel {
+                bottom: 40px;
+                font-size: 0.7em;
+                padding: 5px 10px;
+            }
+
+            #controls {
+                bottom: 3px;
+            }
+
+            #controls button {
+                padding: 8px 12px;
+                font-size: 0.75em;
+            }
+
+            #notification {
+                top: 40px;
+                font-size: 0.9em;
+                padding: 12px 20px;
             }
         }
 
@@ -568,6 +738,22 @@
                         <option value="easy">Easy</option>
                         <option value="medium" selected>Medium</option>
                         <option value="hard">Hard</option>
+                    </select>
+                </label>
+                <label>
+                    Field Type:
+                    <select id="field-type-select">
+                        <option value="soccer" selected>Soccer</option>
+                        <option value="baseball">Baseball</option>
+                        <option value="football">Football</option>
+                    </select>
+                </label>
+                <label>
+                    Stadium Type:
+                    <select id="stadium-type-select">
+                        <option value="classic" selected>Classic</option>
+                        <option value="modern">Modern</option>
+                        <option value="retro">Retro</option>
                     </select>
                 </label>
             </div>

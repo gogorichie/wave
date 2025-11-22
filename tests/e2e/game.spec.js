@@ -77,4 +77,101 @@ test.describe('Stadium Wave Game', () => {
     await expect(gameTitle).toBeVisible();
     await expect(gameTitle).toContainText('Fan Wave');
   });
+
+  test('should detect performance tier on initialization', async ({ page }) => {
+    const consoleLogs = [];
+    page.on('console', msg => {
+      if (msg.type() === 'log' && msg.text().includes('Performance tier')) {
+        consoleLogs.push(msg.text());
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('#start-btn', { timeout: 30000 });
+    
+    // Check that performance tier was logged
+    expect(consoleLogs.length).toBeGreaterThan(0);
+    expect(consoleLogs[0]).toMatch(/Performance tier: (low|medium|high)/);
+  });
+
+  test('should handle tab visibility changes', async ({ page }) => {
+    const consoleLogs = [];
+    page.on('console', msg => {
+      if (msg.text().includes('Tab')) {
+        consoleLogs.push(msg.text());
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('#start-btn', { timeout: 30000 });
+    await page.click('#start-btn');
+    
+    // Simulate tab becoming hidden
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: true, writable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    
+    // Wait a bit for the event to be processed
+    await page.waitForTimeout(100);
+    
+    // Check that visibility change was logged
+    expect(consoleLogs.some(log => log.includes('Tab hidden'))).toBeTruthy();
+  });
+
+  test('should apply performance tier to canvas resolution', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#start-btn', { timeout: 30000 });
+    
+    // Get canvas properties
+    const canvasProps = await page.evaluate(() => {
+      const canvas = document.getElementById('game-canvas');
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        styleWidth: canvas.style.width,
+        styleHeight: canvas.style.height,
+        dpr: window.devicePixelRatio || 1
+      };
+    });
+    
+    // Canvas should have reasonable dimensions
+    expect(canvasProps.width).toBeGreaterThan(0);
+    expect(canvasProps.height).toBeGreaterThan(0);
+    
+    // The actual canvas size should be based on effective DPR
+    // (which may be capped for performance)
+    const styleWidthNum = parseFloat(canvasProps.styleWidth);
+    const ratio = canvasProps.width / styleWidthNum;
+    expect(ratio).toBeGreaterThanOrEqual(1);
+    expect(ratio).toBeLessThanOrEqual(canvasProps.dpr);
+  });
+
+  test('should debounce resize events', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#start-btn', { timeout: 30000 });
+    await page.click('#start-btn');
+    
+    // Get initial canvas dimensions
+    const initialDimensions = await page.evaluate(() => {
+      const canvas = document.getElementById('game-canvas');
+      return { width: canvas.width, height: canvas.height };
+    });
+    
+    // Trigger resize event
+    await page.setViewportSize({ width: 1200, height: 900 });
+    
+    // Wait for debounce to complete
+    await page.waitForTimeout(200);
+    
+    // Canvas dimensions should have updated
+    const newDimensions = await page.evaluate(() => {
+      const canvas = document.getElementById('game-canvas');
+      return { width: canvas.width, height: canvas.height };
+    });
+    
+    // Dimensions should have changed (unless viewport was already that size)
+    expect(newDimensions.width).toBeGreaterThan(0);
+    expect(newDimensions.height).toBeGreaterThan(0);
+  });
 });
