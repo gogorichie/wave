@@ -27,6 +27,11 @@ let fieldType = 'soccer';
 let stadiumType = 'classic';
 let eventIntervals = [];
 let activeEventIndicators = [];
+let audioContext = null;
+let masterGain = null;
+let audioBuffers = {};
+let audioPreloaded = false;
+let soundVolume = 1;
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -95,6 +100,13 @@ const LOW_FPS_THRESHOLD = 30;
 const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
 const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
 const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
+
+const SOUND_DEFINITIONS = {
+    success: { frequency: 880, duration: 0.25, attack: 0.02, release: 0.15 },
+    fail: { frequency: 240, duration: 0.35, attack: 0.02, release: 0.25 },
+    alert: { frequency: 660, duration: 0.3, attack: 0.01, release: 0.2 },
+    powerup: { frequency: 520, duration: 0.32, attack: 0.01, release: 0.22, glide: 1.35 }
+};
 
 /**
  * Get effective pixel ratio for a given performance tier
@@ -387,12 +399,116 @@ function showNotification(message, type = 'success') {
 }
 
 /**
- * Play sound effect (placeholder - would use Web Audio API)
+ * Initialize Web Audio context and gain node
+ */
+function initAudioEngine() {
+    if (audioContext || typeof window === 'undefined') return;
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) {
+        console.warn('Web Audio API not supported in this browser');
+        return;
+    }
+
+    audioContext = new AudioCtx();
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = soundVolume;
+    masterGain.connect(audioContext.destination);
+}
+
+/**
+ * Create a short tone buffer for the given sound definition
+ */
+function buildSoundBuffer(config) {
+    const { frequency, duration, attack = 0.01, release = 0.1, glide = 1 } = config;
+    const sampleRate = audioContext.sampleRate;
+    const length = Math.max(1, Math.floor(duration * sampleRate));
+    const buffer = audioContext.createBuffer(1, length, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < length; i++) {
+        const t = i / sampleRate;
+        const attackEnv = Math.min(1, t / attack);
+        const releaseEnv = Math.max(0, Math.min(1, (duration - t) / release));
+        const envelope = Math.min(attackEnv, releaseEnv);
+        const glideFactor = 1 + (glide - 1) * (i / length);
+        const currentFreq = frequency * glideFactor;
+        data[i] = Math.sin(2 * Math.PI * currentFreq * t) * envelope;
+    }
+
+    return buffer;
+}
+
+/**
+ * Preload audio buffers so playback does not stall the render loop
+ */
+function preloadSounds() {
+    if (audioPreloaded) return;
+
+    initAudioEngine();
+    if (!audioContext) return;
+
+    audioBuffers = Object.entries(SOUND_DEFINITIONS).reduce((acc, [key, definition]) => {
+        acc[key] = buildSoundBuffer(definition);
+        return acc;
+    }, {});
+
+    audioPreloaded = true;
+}
+
+/**
+ * Ensure the audio context is resumed after a user gesture
+ */
+function ensureAudioReady() {
+    preloadSounds();
+
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+}
+
+/**
+ * Update the master gain based on slider percentage (0-100)
+ */
+function setSoundVolume(percent) {
+    const clamped = Math.max(0, Math.min(100, Number(percent)));
+    soundVolume = clamped / 100;
+
+    if (masterGain) {
+        masterGain.gain.value = soundVolume;
+    }
+}
+
+/**
+ * Attach unlock listeners to resume the audio context on first interaction
+ */
+function setupAudioUnlock() {
+    const unlock = () => {
+        ensureAudioReady();
+        document.removeEventListener('pointerdown', unlock);
+        document.removeEventListener('keydown', unlock);
+    };
+
+    document.addEventListener('pointerdown', unlock, { passive: true });
+    document.addEventListener('keydown', unlock);
+}
+
+/**
+ * Play sound effect using preloaded Web Audio buffers
  */
 function playSound(type) {
     if (!soundEnabled) return;
-    // Placeholder for Web Audio API implementation
-    console.log('Play sound:', type);
+
+    if (!audioPreloaded) {
+        ensureAudioReady();
+    }
+
+    if (!audioContext || !audioBuffers[type]) return;
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffers[type];
+    source.connect(masterGain);
+    source.start(0);
 }
 
 /**
@@ -1318,6 +1434,8 @@ function getSectorAtPosition(x, y) {
  * Setup input handlers
  */
 function setupInputHandlers() {
+    setupAudioUnlock();
+
     // Mouse move for hover effects
     canvas.addEventListener('mousemove', (e) => {
         if (!isGameRunning || isPaused) {
@@ -1503,10 +1621,23 @@ function setupInputHandlers() {
         });
     }
 
-    document.getElementById('volume-slider').addEventListener('input', (e) => {
-        const volume = e.target.value;
-        document.getElementById('volume-label').textContent = volume + '%';
-    });
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeLabel = document.getElementById('volume-label');
+
+    const updateVolume = (value) => {
+        const normalized = Math.max(0, Math.min(100, Number(value) || 0));
+        if (volumeLabel) {
+            volumeLabel.textContent = `${normalized}%`;
+        }
+
+        ensureAudioReady();
+        setSoundVolume(normalized);
+    };
+
+    if (volumeSlider) {
+        updateVolume(volumeSlider.value);
+        volumeSlider.addEventListener('input', (e) => updateVolume(e.target.value));
+    }
 }
 
 /**
