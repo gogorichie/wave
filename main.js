@@ -26,9 +26,22 @@ let hoveredSector = -1;
 let fieldType = 'soccer';
 let stadiumType = 'classic';
 
-// Canvas settings
-const STADIUM_RADIUS = 250;
-const SECTOR_HEIGHT = 60;
+// Canvas settings - base values that scale with viewport
+const BASE_STADIUM_RADIUS = 250;
+const BASE_SECTOR_HEIGHT = 60;
+
+/**
+ * Calculate optimal stadium size based on viewport dimensions
+ */
+function calculateStadiumSize(canvasWidth, canvasHeight) {
+    // Use the smaller dimension to ensure stadium fits
+    const minDimension = Math.min(canvasWidth, canvasHeight);
+    // Stadium should take up ~80% of the smaller dimension
+    const stadiumRadius = Math.max(80, Math.min(BASE_STADIUM_RADIUS, minDimension * 0.4));
+    const sectorHeight = Math.max(30, stadiumRadius * (BASE_SECTOR_HEIGHT / BASE_STADIUM_RADIUS));
+    
+    return { stadiumRadius, sectorHeight };
+}
 
 // Stadium color themes
 const STADIUM_THEMES = {
@@ -397,11 +410,19 @@ function setupHighDPICanvas(canvas, ctx, container) {
 /**
  * Precompute sector paths for better performance
  */
-function precomputeSectorPaths(totalSectors, centerX, centerY) {
+function precomputeSectorPaths(totalSectors, centerX, centerY, stadiumRadius = null, sectorHeight = null) {
+    // Calculate dynamic sizing if not provided
+    if (!stadiumRadius || !sectorHeight) {
+        const dimensions = calculateStadiumSize(canvas.width / (window.devicePixelRatio || 1), 
+                                                 canvas.height / (window.devicePixelRatio || 1));
+        stadiumRadius = dimensions.stadiumRadius;
+        sectorHeight = dimensions.sectorHeight;
+    }
+    
     sectorPaths = [];
     const angleWidth = (Math.PI * 2) / totalSectors;
-    const innerRadius = STADIUM_RADIUS - SECTOR_HEIGHT;
-    const outerRadius = STADIUM_RADIUS;
+    const innerRadius = stadiumRadius - sectorHeight;
+    const outerRadius = stadiumRadius;
     
     for (let i = 0; i < totalSectors; i++) {
         const angle = (i / totalSectors) * Math.PI * 2 - Math.PI / 2;
@@ -484,15 +505,17 @@ function getSectorGeometry(sectorId, totalSectors) {
     const centerX = canvas.width / (2 * (window.devicePixelRatio || 1));
     const centerY = canvas.height / (2 * (window.devicePixelRatio || 1));
     const angle = (sectorId / totalSectors) * Math.PI * 2 - Math.PI / 2;
+    const dimensions = calculateStadiumSize(centerX * 2, centerY * 2);
+    const { stadiumRadius, sectorHeight } = dimensions;
     
     return {
         angle,
         centerX,
         centerY,
-        innerRadius: STADIUM_RADIUS - SECTOR_HEIGHT,
-        outerRadius: STADIUM_RADIUS,
-        textX: centerX + Math.cos(angle) * ((STADIUM_RADIUS - SECTOR_HEIGHT + STADIUM_RADIUS) / 2),
-        textY: centerY + Math.sin(angle) * ((STADIUM_RADIUS - SECTOR_HEIGHT + STADIUM_RADIUS) / 2)
+        innerRadius: stadiumRadius - sectorHeight,
+        outerRadius: stadiumRadius,
+        textX: centerX + Math.cos(angle) * ((stadiumRadius - sectorHeight + stadiumRadius) / 2),
+        textY: centerY + Math.sin(angle) * ((stadiumRadius - sectorHeight + stadiumRadius) / 2)
     };
 }
 
@@ -883,7 +906,8 @@ function drawField() {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
-    const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
+    const dimensions = calculateStadiumSize(centerX * 2, centerY * 2);
+    const fieldRadius = dimensions.stadiumRadius - dimensions.sectorHeight - 20;
 
     switch (fieldType) {
         case 'baseball':
@@ -1002,14 +1026,15 @@ function getSectorAtPosition(x, y) {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const centerX = (canvas.width / devicePixelRatio) / 2;
     const centerY = (canvas.height / devicePixelRatio) / 2;
+    const dimensions = calculateStadiumSize(centerX * 2, centerY * 2);
     
     const dx = x - centerX;
     const dy = y - centerY;
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     // Check if click is in crowd area
-    const innerRadius = STADIUM_RADIUS - SECTOR_HEIGHT;
-    if (distance < innerRadius || distance > STADIUM_RADIUS) {
+    const innerRadius = dimensions.stadiumRadius - dimensions.sectorHeight;
+    if (distance < innerRadius || distance > dimensions.stadiumRadius) {
         return -1;
     }
     
