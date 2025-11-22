@@ -10,6 +10,7 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 ### Core Gameplay
 
+- **Customizable Field**: Choose between soccer, football, and baseball fields.
 - **Interactive Wave Mechanics**: Click on crowd sectors to initiate and propagate waves around the stadium
 - **Crowd Simulation**: 16 AI-controlled sectors with individual states (idle, anticipating, standing, seated)
 - **Energy & Fatigue System**: Sectors have dynamic energy levels that affect wave readiness

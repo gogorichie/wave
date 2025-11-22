@@ -1,79 +1,52 @@
-# Agent.md Guide: Stadium Wave Game 🏟️
+# Agent Guide: Stadium Wave Game 🏟️
 
-This document is for automated coding agents (and humans) working on the **Stadium Wave Game** project.
+This document is for OpenAI Codex and similar AI coding agents working on the **Stadium Wave Game** project.
 
-The goal of this project is to provide a **browser-based interactive game** where players orchestrate a stadium “wave” by coordinating with AI-controlled crowd sectors to achieve synchronized animations and earn combo points.
+## Essential Guidance for Codex Agents
 
----
+- **Hybrid engine:** Game logic runs in-browser via Python (`game_engine.py` with Pyodide) or, if unavailable, a JS mock (`mock_engine.js`). Both must expose the same API and remain in sync.
+- **Rendering/UI:** All user interaction, animation, and rendering is in JS (`main.js`) using HTML5 Canvas. Game state is always passed as JSON between Python and JS.
+- **Persistence:** Game state and scores are saved to browser `localStorage` (no backend).
 
-## 1. Repository Overview
+### Key Files
+- `game_engine.py`: Python game logic, state machine, scoring, and API for JS integration
+- `mock_engine.js`: JS fallback engine, mirrors Python API contract
+- `main.js`: Handles Pyodide loading, engine selection, rendering, and user input
+- `index.html`: UI layout, canvas, and controls (loads Pyodide from CDN)
+- `tests/test_game_engine.py`: Python unit tests for game logic
+- `tests/e2e/game.spec.js`: Playwright E2E tests for UI and gameplay
 
-**Core idea:**  
-A browser game where the user triggers and maintains a stadium wave. Crowd sectors are simulated with energy, fatigue, and simple AI. The game can run with either:
+### Integration & Security
+- JS calls Python via Pyodide using `runPython`/`runPythonAsync` for all game state changes
+- **Security:** Always use `pyodide.globals.set('param', value)` and then `pyodide.runPython('func(param)')` (never string interpolation) to prevent code injection
+- If Pyodide fails to load, set `useMockEngine` and route all API calls to `mockGameAPI` (identical API)
+- Exposed engine API: `init_game`, `update_game`, `start_wave_at`, `boost_sector_energy`, `get_game_state`, `get_events`, `save_game`, `load_game`
 
-- A **Python game engine** compiled to WebAssembly via **Pyodide** (preferred)
-- A **JavaScript mock engine** with the same public API (fallback when Pyodide is unavailable)
+### Developer Workflows
+- **Start dev server:** `npm run dev` (Vite, opens at http://localhost:3000)
+- **Build production:** `npm run build` (output in `dist/`)
+- **Preview build:** `npm run preview`
+- **Python unit tests:** `npm test` (pytest on `tests/`)
+- **E2E tests:** `npm run test:e2e` (requires dev server)
 
-**Primary responsibilities of this codebase:**
+### Project Conventions
+- **Engine fallback** is automatic and transparent
+- **Game state** is always JSON between Python/JS
+- **Sector state machine:** idle → anticipating → standing → seated, with energy/fatigue/distraction
+- **Wave propagation:** always clockwise, with combo/bonus logic in both engines
+- **No backend/server:** All logic is client-side
 
-- Maintain game state (sectors, wave propagation, score, combos)
-- Render crowd and HUD via HTML5 Canvas at ~60fps
-- Persist scores / game state using browser `localStorage`
-- Provide a seamless Python↔JavaScript integration via Pyodide
+### Extending the Game
+- When adding new mechanics, update both `game_engine.py` and `mock_engine.js` to keep APIs in sync
+- Expose new Python functions via Pyodide and mirror in JS mock
+- Update `main.js` for new APIs/events
+- Add/extend tests in both Python and Playwright
 
----
-
-## 2. Tech Stack & Architecture
-
-### 2.1 Frontend
-
-- **Rendering:** HTML5 Canvas (visualization of crowd, sectors, wave)
-- **Runtime:** Browser (modern Chromium/Firefox/Safari/Edge)
-- **Bundler/Dev server:** Vite (via `npm run dev` / `npm run build`)
-
-### 2.2 Game Engine
-
-- **Primary engine:** `game_engine.py`
-  - Written in Python
-  - Loaded via Pyodide in the browser
-  - Handles:
-    - Sector state machine (idle, anticipating, standing, seated)
-    - Wave propagation logic (clockwise around stadium)
-    - Energy/fatigue adjustments
-    - Scoring & combo calculations
-
-- **Fallback engine:** `mock_engine.js`
-  - Pure JS implementation
-  - Exposes the same public API as `game_engine.py`
-  - Used when Pyodide is unreachable (e.g., CDN blocked)
-
+### References
+- See `.github/copilot-instructions.md` for the canonical, up-to-date agent instructions
+- See `README.md` for gameplay, architecture, and setup details
+- See `game_engine.py` and `mock_engine.js` for engine API contracts
+- See `main.js` for integration and rendering logic
 ### 2.3 Persistence
 
-- **localStorage**
-  - Save/load gameplay progress and high scores
-  - Must remain backward compatible whenever possible
-
-### 2.4 CI/CD
-
-- Find the CI plan in the .github/workflows folder.
-
----
-
-## 3. Project Structure
-
-Key files/directories:
-
-```text
-wave/
-├── game_engine.py       # Python game logic and state management
-├── mock_engine.js       # JavaScript fallback engine (same API as Python)
-├── index.html           # Main HTML structure with canvas
-├── main.js              # JavaScript rendering and Pyodide integration
-├── vite.config.js       # Vite bundler configuration
-├── package.json         # Node dependencies and scripts
-├── tests/
-│   ├── test_game_engine.py   # Python unit tests (for game_engine)
-│   └── e2e/
-│       └── game.spec.js      # Playwright E2E tests
-└── README.md
 
