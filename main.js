@@ -728,6 +728,58 @@ function getSectorColor(sector) {
     }
 }
 
+function getEnergyFillColor(energy) {
+    if (shouldRenderExpensiveEffects()) {
+        if (energy < 0.3) {
+            return '#f87171';
+        }
+        if (energy < 0.6) {
+            return '#fbbf24';
+        }
+        return '#4ade80';
+    }
+
+    return energy < 0.5 ? '#fbbf24' : '#4ade80';
+}
+
+function drawEnergyIndicator(sector, geom) {
+    const baseX = geom.textX;
+    const baseY = geom.textY + 15;
+    const energyColor = getEnergyFillColor(sector.energy);
+
+    if (performanceTier === 'low') {
+        const indicatorWidth = 18;
+        const indicatorHeight = 6;
+        const indicatorX = baseX - indicatorWidth / 2;
+        const indicatorY = baseY;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fillRect(indicatorX, indicatorY, indicatorWidth, indicatorHeight);
+
+        ctx.fillStyle = energyColor;
+        ctx.fillRect(indicatorX, indicatorY, indicatorWidth * sector.energy, indicatorHeight);
+        return;
+    }
+
+    const barWidth = 30;
+    const barHeight = 5;
+    const barX = baseX - barWidth / 2;
+    const barY = baseY;
+
+    // Background bar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+
+    ctx.fillStyle = energyColor;
+    ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
+
+    if (shouldRenderExpensiveEffects()) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+    }
+}
+
 /**
  * Draw crowd sector (optimized with precomputed paths)
  */
@@ -806,43 +858,8 @@ function drawSector(sector, index, totalSectors) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(index, textX, textY);
-    
-    // Energy bar (simplified for low performance tier)
-    if (performanceTier !== 'low') {
-        const barWidth = 30;
-        const barHeight = 5;
-        const barX = textX - barWidth / 2;
-        const barY = textY + 15;
-        
-        // Background bar
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(barX, barY, barWidth, barHeight);
-        
-        // Energy fill with color gradient (only for high performance)
-        let energyColor;
-        if (shouldRenderExpensiveEffects()) {
-            if (sector.energy < 0.3) {
-                energyColor = '#f87171';
-            } else if (sector.energy < 0.6) {
-                energyColor = '#fbbf24';
-            } else {
-                energyColor = '#4ade80';
-            }
-        } else {
-            // Simplified color for medium performance
-            energyColor = sector.energy < 0.5 ? '#fbbf24' : '#4ade80';
-        }
-        
-        ctx.fillStyle = energyColor;
-        ctx.fillRect(barX, barY, barWidth * sector.energy, barHeight);
-        
-        // Border for energy bar (only for high performance)
-        if (shouldRenderExpensiveEffects()) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(barX, barY, barWidth, barHeight);
-        }
-    }
+
+    drawEnergyIndicator(sector, geom);
 }
 
 /**
