@@ -53,7 +53,3 @@ This document is for OpenAI Codex and similar AI coding agents working on the **
 - See `README.md` for gameplay, architecture, and setup details
 - See `game_engine.py` and `mock_engine.js` for engine API contracts
 - See `main.js` for integration and rendering logic
-
-### 2.3 Persistence
-
-
