@@ -960,7 +960,7 @@ function getRectangularField(centerX, centerY, fieldRadius) {
     const devicePixelRatio = window.devicePixelRatio || 1;
     const canvasWidth = canvas.width / devicePixelRatio;
     const canvasHeight = canvas.height / devicePixelRatio;
-    const canvasAspect = canvasWidth / canvasHeight || 1;
+    const canvasAspect = canvasHeight === 0 ? 1 : canvasWidth / canvasHeight;
 
     // Match canvas aspect ratio while fitting inside the available circular area
     const baseScale = (2 * fieldRadius) / Math.sqrt(canvasAspect * canvasAspect + 1);
