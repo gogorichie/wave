@@ -95,6 +95,22 @@ const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
 const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
 
 /**
+ * Get effective pixel ratio for a given performance tier
+ */
+function getEffectivePixelRatio(tier) {
+    const dpr = window.devicePixelRatio || 1;
+    switch (tier) {
+        case 'low':
+            return Math.min(dpr, 1);
+        case 'medium':
+            return Math.min(dpr, 1.5);
+        case 'high':
+        default:
+            return dpr;
+    }
+}
+
+/**
  * Save performance tier to localStorage
  */
 function savePerformanceTier() {
@@ -140,14 +156,13 @@ function detectPerformanceTier() {
     // Determine tier based on score
     if (score < PERFORMANCE_TIER_LOW_THRESHOLD) {
         performanceTier = 'low';
-        effectivePixelRatio = Math.min(dpr, 1); // Cap at 1x for low-end
     } else if (score < PERFORMANCE_TIER_MEDIUM_THRESHOLD) {
         performanceTier = 'medium';
-        effectivePixelRatio = Math.min(dpr, 1.5); // Cap at 1.5x for medium
     } else {
         performanceTier = 'high';
-        effectivePixelRatio = dpr; // Use native DPR for high-end
     }
+    
+    effectivePixelRatio = getEffectivePixelRatio(performanceTier);
     
     console.log(`Performance tier: ${performanceTier} (score: ${score}, DPR: ${dpr} -> ${effectivePixelRatio})`);
     
@@ -181,11 +196,11 @@ function monitorPerformance(timestamp) {
             console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
             if (performanceTier === 'high') {
                 performanceTier = 'medium';
-                effectivePixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
             } else if (performanceTier === 'medium') {
                 performanceTier = 'low';
-                effectivePixelRatio = 1;
             }
+            
+            effectivePixelRatio = getEffectivePixelRatio(performanceTier);
             
             // Save updated tier to localStorage
             savePerformanceTier();
