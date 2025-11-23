@@ -31,8 +31,8 @@ let activeEventIndicators = [];
 // Canvas settings
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
-const SOCCER_FIELD_ASPECT = 68 / 105; // width / height
-const FOOTBALL_FIELD_ASPECT = 53.3 / 120; // width / height
+const SOCCER_FIELD_ASPECT = 68 / 105; // width / length
+const FOOTBALL_FIELD_ASPECT = 53.3 / 120; // width / length
 
 // Stadium color themes
 const STADIUM_THEMES = {
