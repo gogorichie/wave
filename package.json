@@ -24,7 +24,7 @@
     "npm": ">=10.0.0"
   },
   "devDependencies": {
-    "vite": "^7.2.2",
+    "vite": "^7.2.4",
     "@playwright/test": "^1.40.0"
   }
 }
