@@ -21,12 +21,53 @@ let waveAttempts = 0;
 let successfulWaves = 0;
 let currentStreak = 0;
 let soundEnabled = true;
+let audioContext = null;
+let masterGain = null;
+let compressor = null;
+let masterVolume = 1;
 let difficulty = 'medium';
 let hoveredSector = -1;
 let fieldType = 'soccer';
 let stadiumType = 'classic';
 let eventIntervals = [];
 let activeEventIndicators = [];
+
+const SOUND_PROFILES = {
+    success: {
+        wave: 'triangle',
+        frequency: { start: 740, end: 880 },
+        duration: 0.25,
+        gain: 0.35,
+        attack: 0.01,
+        release: 0.15
+    },
+    fail: {
+        wave: 'sawtooth',
+        frequency: { start: 220, end: 120 },
+        duration: 0.35,
+        gain: 0.25,
+        attack: 0.01,
+        release: 0.2
+    },
+    alert: {
+        wave: 'square',
+        frequency: { start: 660, end: 660 },
+        duration: 0.18,
+        gain: 0.28,
+        attack: 0.005,
+        release: 0.12,
+        repeat: 2,
+        interval: 0.12
+    },
+    powerup: {
+        wave: 'sine',
+        frequency: { start: 440, end: 960 },
+        duration: 0.45,
+        gain: 0.32,
+        attack: 0.015,
+        release: 0.25
+    }
+};
 
 // Canvas settings
 const STADIUM_RADIUS = 250;
@@ -388,13 +429,81 @@ function showNotification(message, type = 'success') {
     setTimeout(() => notification.remove(), 2000);
 }
 
+function initAudioContext() {
+    if (audioContext || !window.AudioContext) return;
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioContext.createGain();
+    compressor = audioContext.createDynamicsCompressor();
+
+    masterGain.gain.value = masterVolume;
+    masterGain.connect(compressor);
+    compressor.connect(audioContext.destination);
+}
+
+function resumeAudioContext() {
+    if (!audioContext) return;
+
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+}
+
+function setMasterVolume(value) {
+    masterVolume = value;
+    if (masterGain && audioContext) {
+        masterGain.gain.setTargetAtTime(value, audioContext.currentTime, 0.01);
+    }
+}
+
+function createTone(profile, startTime) {
+    const duration = profile.duration ?? 0.25;
+    const attack = profile.attack ?? 0.01;
+    const release = profile.release ?? 0.12;
+    const endTime = startTime + duration + release;
+
+    const osc = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    const startFreq = profile.frequency?.start ?? profile.frequency ?? 440;
+    const endFreq = profile.frequency?.end ?? startFreq;
+
+    osc.type = profile.wave || 'sine';
+    osc.frequency.setValueAtTime(startFreq, startTime);
+    if (endFreq !== startFreq) {
+        osc.frequency.linearRampToValueAtTime(endFreq, startTime + duration);
+    }
+
+    gainNode.gain.setValueAtTime(0, startTime);
+    gainNode.gain.linearRampToValueAtTime(profile.gain, startTime + attack);
+    gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+
+    osc.connect(gainNode);
+    gainNode.connect(masterGain);
+
+    osc.start(startTime);
+    osc.stop(endTime + 0.05);
+}
+
 /**
- * Play sound effect (placeholder - would use Web Audio API)
+ * Play sound effect via Web Audio API
  */
 function playSound(type) {
     if (!soundEnabled) return;
-    // Placeholder for Web Audio API implementation
-    console.log('Play sound:', type);
+
+    initAudioContext();
+    if (!audioContext || !masterGain) return;
+
+    resumeAudioContext();
+
+    const profile = SOUND_PROFILES[type] || SOUND_PROFILES.success;
+    const now = audioContext.currentTime;
+    const repeatCount = profile.repeat || 1;
+    const interval = profile.interval || profile.duration || 0.2;
+
+    for (let i = 0; i < repeatCount; i++) {
+        createTone(profile, now + i * interval);
+    }
 }
 
 /**
@@ -1540,6 +1649,8 @@ function setupInputHandlers() {
     // Settings handlers
     const soundToggle = document.getElementById('sound-toggle');
     const soundTogglePause = document.getElementById('sound-toggle-pause');
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeLabel = document.getElementById('volume-label');
     const fieldTypeSelect = document.getElementById('field-type-select');
     const stadiumTypeSelect = document.getElementById('stadium-type-select');
     fieldType = fieldTypeSelect ? fieldTypeSelect.value : 'soccer';
@@ -1581,10 +1692,17 @@ function setupInputHandlers() {
         });
     }
 
-    document.getElementById('volume-slider').addEventListener('input', (e) => {
-        const volume = e.target.value;
-        document.getElementById('volume-label').textContent = volume + '%';
-    });
+    if (volumeSlider && volumeLabel) {
+        const initialVolume = Number(volumeSlider.value) / 100;
+        setMasterVolume(initialVolume);
+        volumeLabel.textContent = `${volumeSlider.value}%`;
+
+        volumeSlider.addEventListener('input', (e) => {
+            const volume = Number(e.target.value);
+            volumeLabel.textContent = `${volume}%`;
+            setMasterVolume(volume / 100);
+        });
+    }
 }
 
 /**
@@ -1598,6 +1716,11 @@ function startGame() {
     document.getElementById('help-toggle').classList.remove('hidden');
     document.getElementById('pause-btn').classList.remove('hidden');
     document.getElementById('stats-panel').classList.remove('hidden');
+
+    if (soundEnabled) {
+        initAudioContext();
+        resumeAudioContext();
+    }
     
     // Reset game stats
     gameStartTime = Date.now();
