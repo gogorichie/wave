@@ -81,7 +81,7 @@ npm install
 npm run dev
 ```
 
-The game will open in your browser at `http://localhost:5173` (default Vite port)
+The game will open automatically in your browser at `http://localhost:3000`
 
 ### Running with Python Engine (Pyodide)
 
@@ -116,7 +116,8 @@ npm run test:e2e
 
 ### Development Notes
 
-- Vite dev server runs on port 5173 by default
+- Vite dev server runs on port 3000 (configured in `vite.config.js`)
+- Dev server automatically opens browser on start
 - Python engine code is loaded via fetch from `/game_engine.py`
 - Mock engine is imported as ES module in `main.js`
 - High-DPI rendering uses `devicePixelRatio` (adjusted by performance tier)
