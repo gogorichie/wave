@@ -19,8 +19,8 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 ### Core Gameplay
 
-- **Customizable Field**: Choose between soccer, football, and baseball fields
-- **Stadium Themes**: Select from Classic, Modern, and Retro stadium visual themes
+- **Customizable Field**: Choose between soccer, football, and baseball fields.
+- **Stadium Themes**: Select from Classic, Modern, and Retro stadium visual themes.
 - **Interactive Wave Mechanics**: Click on crowd sectors to initiate and propagate waves around the stadium
 - **Crowd Simulation**: 16 AI-controlled sectors with individual states (idle, anticipating, standing, seated)
 - **Energy & Fatigue System**: Sectors have dynamic energy levels that affect wave readiness
@@ -81,7 +81,7 @@ npm install
 npm run dev
 ```
 
-The game will open automatically in your browser at `http://localhost:3000`
+The game will open automatically in your browser at `http://localhost:3000`.
 
 ### Running with Python Engine (Pyodide)
 
