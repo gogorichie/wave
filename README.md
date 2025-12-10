@@ -221,9 +221,13 @@ Each of the 16 sectors has:
 
 ### Stadium Events
 
-- **Mascot**: Distracts 3 adjacent sectors (+0.3 distraction), triggered every ~30s
-- **Scoreboard**: Boosts all sectors (+0.2 energy), triggered every ~45s
-- Manual event triggers available via UI buttons
+- **Mascot**: Distracts 3 adjacent sectors (+0.3 distraction)
+  - Auto-triggered every 30s by JavaScript layer
+  - Manual trigger via "Mascot Moment" button
+- **Scoreboard**: Boosts all sectors (+0.2 energy)
+  - Auto-triggered every 45s by JavaScript layer
+  - Manual trigger via "Scoreboard Hype" button
+- Event logic implemented in Python engine, timing managed by JavaScript
 
 ### Performance Optimization
 
