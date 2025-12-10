@@ -19,35 +19,46 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 ### Core Gameplay
 
-- **Customizable Field**: Choose between soccer, football, and baseball fields.
+- **Customizable Field**: Choose between soccer, football, and baseball fields
+- **Stadium Themes**: Select from Classic, Modern, and Retro stadium visual themes
 - **Interactive Wave Mechanics**: Click on crowd sectors to initiate and propagate waves around the stadium
 - **Crowd Simulation**: 16 AI-controlled sectors with individual states (idle, anticipating, standing, seated)
 - **Energy & Fatigue System**: Sectors have dynamic energy levels that affect wave readiness
 - **Combo System**: Chain successful wave propagations for multiplier bonuses
+- **Stadium Events**:
+  - Mascot distractions that affect nearby sectors
+  - Scoreboard hype events that boost all sectors
 - **Player Interactions**:
   - Left-click sectors to start waves
   - Right-click to boost sector energy
   - Spacebar to quick-start from sector 0
+  - Touch support: tap to start wave, long-press to boost energy
+- **Performance Optimization**: Automatic performance tier detection for smooth gameplay across devices
 
 ### Technology Stack
 
-- **Frontend**: HTML5 Canvas for real-time crowd visualization
-- **Python Engine**: Game logic runs via Pyodide in the browser
-- **Rendering**: JavaScript handles smooth 60fps animations
-- **Persistence**: LocalStorage for save/load functionality
+- **Frontend**: HTML5 Canvas with high-DPI support for crisp rendering
+- **Python Engine**: Game logic runs via Pyodide v0.24.1 in the browser
+- **Fallback Engine**: JavaScript mock engine provides identical gameplay when Pyodide is unavailable
+- **Audio**: Web Audio API for procedural sound effects
+- **Build Tool**: Vite for development and production builds
+- **Testing**: pytest for Python unit tests, Playwright for E2E tests
 
 ### Game Architecture
 
-- **Python Game Engine Layer**: State management, wave propagation algorithms, scoring
-- **JavaScript Rendering Layer**: Canvas-based crowd visualization with color-coded states
-- **UI Layer**: HUD displaying score, combo, and wave statistics
+- **Hybrid Engine**: Game logic runs in-browser via Python (Pyodide) or JavaScript fallback, both exposing identical APIs
+- **Python Game Engine Layer** (`game_engine.py`): State management, wave propagation algorithms, scoring
+- **JavaScript Mock Engine** (`mock_engine.js`): Fallback engine mirroring Python API for offline/demo use
+- **JavaScript Rendering Layer** (`main.js`): Canvas-based visualization, Pyodide integration, input handling
+- **UI Layer**: HUD displaying score, combo, waves, accuracy, streak, and game time
 
 ## Installation
 
 ### Prerequisites
 
 - Node.js 20+ and npm 10+
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+- Modern web browser with JavaScript enabled (Chrome, Firefox, Safari, Edge)
+- Internet connection for Pyodide CDN (optional - JavaScript fallback available)
 
 ### Setup
 
@@ -70,81 +81,115 @@ npm install
 npm run dev
 ```
 
-The game will open in your browser at `http://localhost:3000`
+The game will open in your browser at `http://localhost:5173` (default Vite port)
 
 ### Running with Python Engine (Pyodide)
 
-By default, the game attempts to load Pyodide from CDN to run the Python game engine in the browser. If Pyodide is unavailable (e.g., CDN blocked), the game automatically falls back to a JavaScript mock engine that provides the same functionality.
+The game attempts to load Pyodide v0.24.1 from CDN to run the Python game engine in the browser. If Pyodide is unavailable (e.g., offline, CDN blocked), the game automatically falls back to a JavaScript mock engine.
 
-To ensure Python engine works:
+Check browser console for:
+- "Running with Python/Pyodide engine" - Python engine active
+- "Running with JavaScript mock engine" - Fallback active
 
-- Ensure internet connection for CDN access
-- Check browser console for "Running with Python/Pyodide engine" message
-- If you see "Running with JavaScript mock engine", the fallback is active
-
-Both engines provide an identical gameplay experience.
+Both engines provide identical gameplay experience and API contracts.
 
 ## Development
 
-### Build for Production
+### Development Commands
 
 ```bash
+# Start development server (Vite, hot reload)
+npm run dev
+
+# Build for production (outputs to dist/)
 npm run build
-```
 
-### Preview Production Build
-
-```bash
+# Preview production build locally
 npm run preview
-```
 
-### Run Tests
-
-```bash
-# Python unit tests
+# Run Python unit tests (pytest)
 npm test
 
-# E2E tests (requires dev server running)
+# Run E2E tests (Playwright, requires dev server running)
 npm run test:e2e
 ```
 
+### Development Notes
+
+- Vite dev server runs on port 5173 by default
+- Python engine code is loaded via fetch from `/game_engine.py`
+- Mock engine is imported as ES module in `main.js`
+- High-DPI rendering uses `devicePixelRatio` (adjusted by performance tier)
+- All game state is JSON-serialized between Python and JavaScript
+- Security: Always use `pyodide.globals.set()` to pass parameters, never string interpolation
+
 ## How to Play
 
-1. **Start the Game**: Click "Let's Go!" to begin
-2. **Initiate Waves**: Click on any crowd sector to start a wave
-3. **Build Combos**: Keep the wave going by maintaining high energy levels
-4. **Boost Energy**: Right-click sectors with low energy to boost them
-5. **Score Points**: Complete full stadium waves for bonus points
-6. **Save Progress**: Use the save button to preserve your high scores
+### Getting Started
+
+1. **Configure Settings**: Choose your preferences in the tutorial screen:
+   - Sound effects (on/off)
+   - Difficulty (Easy/Medium/Hard)
+   - Field type (Soccer/Baseball/Football)
+   - Stadium theme (Classic/Modern/Retro)
+2. **Start the Game**: Click "Let's Go!" to begin
+
+### Controls
+
+**Mouse/Desktop:**
+- Left-click any crowd sector to start a wave
+- Right-click any sector to boost its energy
+- Press `Space` to quick-start wave at sector 0
+- Press `P` to pause/resume
+- Press `H` to toggle help overlay
+- Press `F` for fullscreen mode
+- Press `Esc` to pause or close help
+
+**Touch/Mobile:**
+- Tap any sector to start a wave
+- Long-press (>500ms) any sector to boost its energy
+
+### Gameplay
+
+- **Initiate Waves**: Click sectors with sufficient energy (green/yellow bars)
+- **Build Combos**: Chain successful wave propagations for multiplier bonuses
+- **Boost Energy**: Right-click/long-press low energy sectors (red bars)
+- **Trigger Events**: Use event buttons to activate mascot or scoreboard effects
+- **Watch Stats**: Monitor time, accuracy, and streak in the stats panel
 
 ### Scoring
 
-- Basic wave participation: 10 points × combo multiplier
-- Full stadium completion: 100 points + combo bonus
-- Combos increase with consecutive successful sector waves
+- Wave participation: 10 points × current combo multiplier
+- Full stadium completion: 100 points × (1 + combo × 0.5)
+- Combos increase by 1 for each successful sector wave
+- Failed waves reset combo to 0
 
 ### Tips
 
-- Watch the energy bars under sector numbers
-- Low energy sectors (red/yellow bars) need boosting
-- Timing is key - sectors must be in idle or seated state to start
-- Green indicates active wave participation
-- Yellow shows anticipation state
+- Energy bars below sector numbers show readiness (red < 30%, yellow 30-60%, green > 60%)
+- Sectors must be in idle or seated state to start waves
+- Green/animated sectors indicate active wave participation
+- Yellow indicates anticipation state (about to stand)
+- Mascot events distract nearby sectors - boost them to recover
+- Scoreboard events boost all sectors' energy
 
 ## Project Structure
 
 ```
 wave/
-├── game_engine.py       # Python game logic and state management
-├── mock_engine.js       # JavaScript fallback engine (same API as Python)
-├── index.html           # Main HTML structure with canvas
-├── main.js              # JavaScript rendering and Pyodide integration
-├── vite.config.js       # Vite bundler configuration
-├── package.json         # Node dependencies and scripts
+├── game_engine.py           # Python game logic and state management
+├── mock_engine.js           # JavaScript fallback engine (mirrors Python API)
+├── index.html               # Main HTML with canvas, UI components, and styles
+├── main.js                  # Core game: rendering, Pyodide integration, input handling
+├── vite.config.js           # Vite bundler configuration
+├── playwright.config.js     # Playwright E2E test configuration
+├── pyproject.toml           # Python project configuration
+├── package.json             # Node dependencies and npm scripts
 ├── tests/
-│   ├── test_game_engine.py   # Python unit tests (21 tests)
+│   ├── test_game_engine.py  # Python unit tests for game engine
 │   └── e2e/
-│       └── game.spec.js       # Playwright E2E tests
+│       └── game.spec.js     # Playwright E2E tests for UI/gameplay
+├── infra/                   # Azure Static Web Apps infrastructure
 └── README.md
 ```
 
@@ -152,20 +197,67 @@ wave/
 
 ### Crowd Sectors
 
-Each sector has:
+Each of the 16 sectors has:
 
-- **State**: idle → anticipating → standing → seated
-- **Energy**: 0.0-1.0 (affects readiness)
-- **Fatigue**: 0.0-1.0 (increases with activity)
-- **Enthusiasm**: 0.6-0.9 (randomized personality trait)
-- **Distractions**: External events affecting focus
+- **State Machine**: idle → anticipating → standing → seated
+  - `idle`: Default state, ready for new waves
+  - `anticipating`: Brief 0.5s preparation before standing
+  - `standing`: Active participation for 1.5s
+  - `seated`: Recovery state after wave completes
+- **Energy**: 0.0-1.0 (regenerates at 0.1/second, consumed 0.2 per wave)
+- **Fatigue**: 0.0-1.0 (increases 0.1 per wave, recovers 0.05/second)
+- **Enthusiasm**: 0.6-0.9 (randomized personality trait, affects readiness)
+- **Distractions**: 0.0-1.0 (external events affect focus, reduces over time)
 
-### Wave Propagation
+### Wave Propagation Mechanics
 
-- Waves travel clockwise around the stadium
-- Sectors must be ready (sufficient energy, low fatigue)
-- Failed propagation ends the wave and resets combo
-- Successful full circles award completion bonuses
+- Waves travel clockwise around the stadium at 0.3 seconds per sector
+- **Readiness Formula**: `(energy × enthusiasm) - (fatigue + distractions) > 0.3`
+- Sectors must be in idle or seated state to start new waves
+- Standing transition occurs 0.2 seconds after anticipating starts
+- Failed propagation ends wave and resets combo to 0
+- Full circle completion awards bonus: `100 × (1 + combo × 0.5)` points
+
+### Stadium Events
+
+- **Mascot**: Distracts 3 adjacent sectors (+0.3 distraction), triggered every ~30s
+- **Scoreboard**: Boosts all sectors (+0.2 energy), triggered every ~45s
+- Manual event triggers available via UI buttons
+
+### Performance Optimization
+
+- **Tier Detection**: Automatic detection based on device capabilities (DPR, viewport, CPU cores)
+- **Adaptive Rendering**: Low/Medium/High tiers adjust pixel ratio and effects
+- **FPS Monitoring**: Auto-downgrade if FPS drops below 30
+- **Tab Visibility**: Throttles updates to 5 FPS when tab is hidden
+
+## Technical Details
+
+### Engine API Contract
+
+Both Python and JavaScript engines expose identical functions:
+
+- `init_game(num_sectors)`: Initialize new game with N sectors
+- `update_game(dt)`: Update game state by delta time
+- `start_wave_at(sector_id)`: Attempt to start wave at sector
+- `boost_sector_energy(sector_id)`: Boost sector's energy
+- `get_game_state()`: Get current game state as JSON
+- `get_events()`: Get and clear pending events
+- `trigger_event(event_type, sector_id)`: Trigger stadium events
+- `save_game()`: Serialize game state to JSON
+- `load_game(save_data)`: Restore game from JSON
+
+### Field Types
+
+- **Soccer**: Rectangular pitch with center circle, penalty boxes, goal boxes
+- **Baseball**: Diamond-shaped infield with bases, pitcher's mound, foul lines
+- **Football**: Rectangular field with yard lines, hash marks, end zones
+
+### Stadium Themes
+
+- **Classic**: Blue idle, yellow anticipating, green standing, indigo seated
+- **Modern**: Purple idle, orange anticipating, cyan standing, purple seated
+- **Retro**: Red idle, amber anticipating, green standing, rose seated
 
 ## Future Enhancements
 
@@ -174,10 +266,10 @@ Potential additions:
 - Multiple stadium venues with varying difficulty
 - Special wave patterns (reverse-wave, double-wave)
 - Weather effects and day/night cycles
-- Mascot events and scoreboard interactions
-- Cosmetic unlocks (foam fingers, flags)
-- Highlight reel GIF export
-- Progressive difficulty campaign mode
+- Progressive difficulty scaling
+- Cosmetic unlocks and achievements
+- Leaderboards and replay sharing
+- Campaign mode with unlockable stadiums
 
 ## License
 
