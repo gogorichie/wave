@@ -44,21 +44,12 @@ jobs:
             echo "Azure CLI version:"
             az version
 
-      # OPTIONAL: ensure resource group exists
-      - name: Ensure resource group exists
-        uses: azure/CLI@v3
-        with:
-          azcliversion: latest
-          inlineScript: |
+            echo "Ensuring resource group exists..."
             az group create \
               --name "$AZURE_RESOURCE_GROUP" \
               --location "$AZURE_LOCATION"
 
-      - name: Deploy Bicep to resource group
-        uses: azure/CLI@v3
-        with:
-          azcliversion: latest
-          inlineScript: |
+            echo "Deploying Bicep template..."
             az deployment group create \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --template-file "$BICEP_FILE" \
