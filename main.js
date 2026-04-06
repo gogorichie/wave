@@ -32,6 +32,9 @@ let stadiumType = 'classic';
 let eventIntervals = [];
 let activeEventIndicators = [];
 
+// Event listener cleanup
+let eventListeners = [];
+
 const SOUND_PROFILES = {
     success: {
         wave: 'triangle',
@@ -139,6 +142,20 @@ const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
 const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
 const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
 
+// Performance metrics
+let performanceMetrics = {
+    frameTimings: [],
+    renderTimings: [],
+    updateTimings: [],
+    lastGCTime: 0,
+    avgFrameTime: 0,
+    peakFrameTime: 0
+};
+
+// Object pools for performance
+const notificationPool = [];
+const MAX_POOL_SIZE = 10;
+
 /**
  * Get effective pixel ratio for a given performance tier
  */
@@ -222,20 +239,23 @@ function detectPerformanceTier() {
  */
 function monitorPerformance(timestamp) {
     frameCount++;
-    
+
     // Calculate FPS every second
     if (timestamp - lastFrameTime >= 1000) {
         const fps = frameCount;
         fpsHistory.push(fps);
-        
+
         // Keep only last 5 seconds of history
         if (fpsHistory.length > 5) {
             fpsHistory.shift();
         }
-        
+
         // Calculate average FPS
         const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
-        
+
+        // Update performance metrics
+        performanceMetrics.avgFrameTime = 1000 / avgFps;
+
         // Auto-downgrade if consistently low FPS
         if (avgFps < LOW_FPS_THRESHOLD && performanceTier !== 'low') {
             console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
@@ -244,12 +264,12 @@ function monitorPerformance(timestamp) {
             } else if (performanceTier === 'medium') {
                 performanceTier = 'low';
             }
-            
+
             effectivePixelRatio = getEffectivePixelRatio(performanceTier);
-            
+
             // Save updated tier to localStorage
             savePerformanceTier();
-            
+
             // Trigger canvas resize to apply new DPR
             const container = document.getElementById('game-container');
             if (container && canvas && ctx) {
@@ -258,10 +278,56 @@ function monitorPerformance(timestamp) {
                                     dimensions.width / 2, dimensions.height / 2);
             }
         }
-        
+
         frameCount = 0;
         lastFrameTime = timestamp;
     }
+}
+
+/**
+ * Collect performance metrics
+ */
+function collectPerformanceMetrics(frameTime, renderTime, updateTime) {
+    const metrics = performanceMetrics;
+
+    // Track frame timings (keep last 60 frames)
+    metrics.frameTimings.push(frameTime);
+    if (metrics.frameTimings.length > 60) {
+        metrics.frameTimings.shift();
+    }
+
+    // Track render timings
+    metrics.renderTimings.push(renderTime);
+    if (metrics.renderTimings.length > 60) {
+        metrics.renderTimings.shift();
+    }
+
+    // Track update timings
+    metrics.updateTimings.push(updateTime);
+    if (metrics.updateTimings.length > 60) {
+        metrics.updateTimings.shift();
+    }
+
+    // Calculate peak frame time
+    metrics.peakFrameTime = Math.max(metrics.peakFrameTime, frameTime);
+}
+
+/**
+ * Get performance statistics
+ */
+function getPerformanceStats() {
+    const metrics = performanceMetrics;
+    return {
+        avgFrameTime: metrics.avgFrameTime,
+        peakFrameTime: metrics.peakFrameTime,
+        avgRenderTime: metrics.renderTimings.length > 0
+            ? metrics.renderTimings.reduce((a, b) => a + b, 0) / metrics.renderTimings.length
+            : 0,
+        avgUpdateTime: metrics.updateTimings.length > 0
+            ? metrics.updateTimings.reduce((a, b) => a + b, 0) / metrics.updateTimings.length
+            : 0,
+        performanceTier
+    };
 }
 
 /**
@@ -350,7 +416,7 @@ function initGame() {
 }
 
 /**
- * Update game state from Python
+ * Update game state from Python (with error handling)
  */
 function updateGameState(dt) {
     try {
@@ -363,15 +429,24 @@ function updateGameState(dt) {
             stateJson = pyodide.runPython(`update_game(dt_value)`);
             eventsJson = pyodide.runPython(`get_events()`);
         }
-        
+
         gameState = JSON.parse(stateJson);
         const events = JSON.parse(eventsJson);
-        
+
         events.forEach(event => handleGameEvent(event));
-        
+
         return gameState;
     } catch (error) {
         console.error('Failed to update game state:', error);
+        // Attempt recovery by reinitializing if state is corrupted
+        if (!gameState) {
+            console.warn('Game state corrupted, attempting recovery...');
+            try {
+                initGame();
+            } catch (recoveryError) {
+                console.error('Recovery failed:', recoveryError);
+            }
+        }
         return null;
     }
 }
@@ -414,19 +489,39 @@ function handleGameEvent(event) {
 }
 
 /**
- * Show notification message
+ * Show notification message (optimized with object pooling)
  */
 function showNotification(message, type = 'success') {
-    const existing = document.getElementById('notification');
-    if (existing) existing.remove();
-    
-    const notification = document.createElement('div');
-    notification.id = 'notification';
-    notification.className = type;
+    // Try to reuse existing notification from pool
+    let notification = notificationPool.pop();
+
+    if (!notification) {
+        // Create new notification if pool is empty
+        notification = document.createElement('div');
+        notification.id = 'notification';
+        notification.className = type;
+    } else {
+        // Reset notification properties
+        notification.className = type;
+    }
+
     notification.textContent = message;
+
+    // Remove existing notification if any
+    const existing = document.getElementById('notification');
+    if (existing && existing !== notification) {
+        existing.remove();
+    }
+
     document.getElementById('game-container').appendChild(notification);
-    
-    setTimeout(() => notification.remove(), 2000);
+
+    // Return notification to pool after use
+    setTimeout(() => {
+        notification.remove();
+        if (notificationPool.length < MAX_POOL_SIZE) {
+            notificationPool.push(notification);
+        }
+    }, 2000);
 }
 
 function initAudioContext() {
@@ -688,6 +783,24 @@ function debounce(func, wait) {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(later, wait);
     };
+}
+
+/**
+ * Add event listener with cleanup tracking
+ */
+function addTrackedEventListener(element, event, handler, options) {
+    element.addEventListener(event, handler, options);
+    eventListeners.push({ element, event, handler, options });
+}
+
+/**
+ * Remove all tracked event listeners
+ */
+function removeAllEventListeners() {
+    eventListeners.forEach(({ element, event, handler, options }) => {
+        element.removeEventListener(event, handler, options);
+    });
+    eventListeners = [];
 }
 
 /**
@@ -1404,21 +1517,23 @@ function updateHUD() {
 }
 
 /**
- * Game loop
+ * Game loop (optimized with performance tracking)
  */
 let lastHiddenUpdateTime = 0;
 function gameLoop(timestamp) {
     if (!isGameRunning) return;
-    
+
+    const frameStartTime = performance.now();
+
     // Monitor performance
     monitorPerformance(timestamp);
-    
+
     const dt = lastTime ? (timestamp - lastTime) / 1000 : 0;
     lastTime = timestamp;
-    
+
     // Cap dt to prevent large jumps
     const cappedDt = Math.min(dt, 0.1);
-    
+
     // Throttle updates when tab is hidden (reduce to ~5 FPS)
     if (!isTabVisible && !isPaused) {
         // Only update every HIDDEN_TAB_UPDATE_INTERVAL when hidden
@@ -1430,19 +1545,32 @@ function gameLoop(timestamp) {
         }
         lastHiddenUpdateTime = timestamp;
     }
-    
+
+    let updateTime = 0;
+    let renderTime = 0;
+
     // Only update if not paused
     if (!isPaused) {
+        const updateStartTime = performance.now();
+
         // Update game state
         updateGameState(cappedDt);
-        
+
         // Update stats
         updateStats(cappedDt);
+
+        updateTime = performance.now() - updateStartTime;
     }
-    
+
     // Always render (so we can see pause state)
+    const renderStartTime = performance.now();
     render();
-    
+    renderTime = performance.now() - renderStartTime;
+
+    // Collect performance metrics
+    const frameTime = performance.now() - frameStartTime;
+    collectPerformanceMetrics(frameTime, renderTime, updateTime);
+
     // Continue loop
     animationId = requestAnimationFrame(gameLoop);
 }
@@ -1459,7 +1587,7 @@ function startGameLoop() {
 }
 
 /**
- * Stop game loop
+ * Stop game loop (with cleanup)
  */
 function stopGameLoop() {
     isGameRunning = false;
@@ -1468,6 +1596,18 @@ function stopGameLoop() {
         animationId = null;
     }
     clearEventTimers();
+
+    // Clean up audio nodes to prevent memory leaks
+    if (audioContext && audioContext.state !== 'closed') {
+        // Note: We don't close the audio context as it may be reused
+        // Just disconnect nodes
+        if (masterGain) {
+            masterGain.disconnect();
+        }
+        if (compressor) {
+            compressor.disconnect();
+        }
+    }
 }
 
 /**
