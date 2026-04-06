@@ -96,11 +96,21 @@
             letter-spacing: 2px;
         }
 
+        /* CSS Custom Properties for dynamic HUD scaling */
+        :root {
+            --hud-label-size: 14px;
+            --hud-value-size: 24px;
+            --hud-panel-padding-v: 15px;
+            --hud-panel-padding-h: 25px;
+            --hud-top: 100px;
+            --hud-horizontal-padding: 20px;
+        }
+
         #hud {
             position: absolute;
-            top: 100px;
-            left: 20px;
-            right: 20px;
+            top: var(--hud-top);
+            left: var(--hud-horizontal-padding);
+            right: var(--hud-horizontal-padding);
             display: flex;
             justify-content: space-between;
             pointer-events: none;
@@ -108,7 +118,7 @@
 
         .hud-panel {
             background: rgba(0, 0, 0, 0.7);
-            padding: 15px 25px;
+            padding: var(--hud-panel-padding-v) var(--hud-panel-padding-h);
             border-radius: 10px;
             backdrop-filter: blur(10px);
         }
@@ -118,12 +128,12 @@
         }
 
         .hud-label {
-            font-size: 0.9em;
+            font-size: var(--hud-label-size);
             color: #aaa;
         }
 
         .hud-value {
-            font-size: 1.5em;
+            font-size: var(--hud-value-size);
             font-weight: bold;
             color: #fff;
         }
@@ -423,16 +433,12 @@
             }
 
             #hud {
-                top: 50px;
-                left: 5px;
-                right: 5px;
-                flex-direction: row;
-                gap: 5px;
+                /* Position and layout handled by JavaScript updateHUDScaling() */
                 flex-wrap: wrap;
             }
 
             .hud-panel {
-                padding: 8px 12px;
+                /* Padding handled by JavaScript updateHUDScaling() */
                 flex: 1 1 auto;
                 min-width: 0;
             }
@@ -441,13 +447,7 @@
                 margin: 3px 0;
             }
 
-            .hud-label {
-                font-size: 0.75em;
-            }
-
-            .hud-value {
-                font-size: 1em;
-            }
+            /* Font sizes handled by JavaScript updateHUDScaling() */
 
             #help-toggle, #pause-btn {
                 width: 36px;
@@ -554,17 +554,7 @@
                 font-size: 1.5em;
             }
 
-            .hud-panel {
-                padding: 6px 10px;
-            }
-
-            .hud-label {
-                font-size: 0.7em;
-            }
-
-            .hud-value {
-                font-size: 0.95em;
-            }
+            /* HUD font sizes and padding handled by JavaScript updateHUDScaling() */
 
             #controls button {
                 padding: 10px 12px;
@@ -598,23 +588,7 @@
                 top: 3px;
             }
 
-            #hud {
-                top: 30px;
-                left: 3px;
-                right: 3px;
-            }
-
-            .hud-panel {
-                padding: 5px 8px;
-            }
-
-            .hud-label {
-                font-size: 0.65em;
-            }
-
-            .hud-value {
-                font-size: 0.85em;
-            }
+            /* HUD positioning and font sizes handled by JavaScript updateHUDScaling() */
 
             #help-toggle, #pause-btn {
                 width: 30px;
