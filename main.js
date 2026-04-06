@@ -980,6 +980,9 @@ function setupCanvas() {
     offscreenCanvas = document.createElement('canvas');
     offscreenCtx = offscreenCanvas.getContext('2d');
     
+    // Apply initial HUD scaling
+    updateHUDScaling();
+
     // Shared resize logic that handles layout recomputation
     const handleResize = () => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
@@ -993,6 +996,9 @@ function setupCanvas() {
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
+
+        // Update HUD scaling on resize
+        updateHUDScaling();
 
         // Force a redraw without full re-initialization
         // Game state is preserved - only rendering is updated
@@ -1621,11 +1627,83 @@ function render() {
 }
 
 /**
+ * Calculate and apply responsive HUD scaling based on canvas width
+ */
+function updateHUDScaling() {
+    const container = document.getElementById('game-container');
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    // Define breakpoints
+    const BREAKPOINT_MOBILE = 480;
+    const BREAKPOINT_TABLET = 768;
+
+    // Calculate base font sizes as percentages of container width
+    // Use clamp to ensure min/max bounds for readability
+    let hudLabelSize, hudValueSize, hudPanelPadding, hudTop, hudHorizontalPadding;
+
+    if (containerWidth <= BREAKPOINT_MOBILE) {
+        // Small mobile: smaller fonts, compact padding
+        hudLabelSize = Math.max(10, Math.min(12, containerWidth * 0.028));  // ~2.8% of width, min 10px, max 12px
+        hudValueSize = Math.max(14, Math.min(18, containerWidth * 0.045));  // ~4.5% of width, min 14px, max 18px
+        hudPanelPadding = Math.max(6, Math.min(10, containerWidth * 0.025)); // ~2.5% of width
+        hudTop = Math.max(40, containerHeight * 0.08); // 8% from top or min 40px
+        hudHorizontalPadding = Math.max(5, containerWidth * 0.015);
+    } else if (containerWidth <= BREAKPOINT_TABLET) {
+        // Tablet: medium fonts
+        hudLabelSize = Math.max(11, Math.min(14, containerWidth * 0.018)); // ~1.8% of width
+        hudValueSize = Math.max(16, Math.min(20, containerWidth * 0.026)); // ~2.6% of width
+        hudPanelPadding = Math.max(8, Math.min(12, containerWidth * 0.02));
+        hudTop = Math.max(50, containerHeight * 0.1);
+        hudHorizontalPadding = Math.max(5, containerWidth * 0.015);
+    } else {
+        // Desktop: larger fonts
+        hudLabelSize = Math.max(14, Math.min(16, containerWidth * 0.012)); // ~1.2% of width
+        hudValueSize = Math.max(22, Math.min(28, containerWidth * 0.022)); // ~2.2% of width
+        hudPanelPadding = Math.max(15, Math.min(25, containerWidth * 0.022));
+        hudTop = 100;
+        hudHorizontalPadding = 20;
+    }
+
+    // Apply via CSS custom properties for smooth scaling
+    const root = document.documentElement;
+    root.style.setProperty('--hud-label-size', `${hudLabelSize}px`);
+    root.style.setProperty('--hud-value-size', `${hudValueSize}px`);
+    root.style.setProperty('--hud-panel-padding-v', `${hudPanelPadding}px`);
+    root.style.setProperty('--hud-panel-padding-h', `${hudPanelPadding * 1.5}px`);
+    root.style.setProperty('--hud-top', `${hudTop}px`);
+    root.style.setProperty('--hud-horizontal-padding', `${hudHorizontalPadding}px`);
+
+    // Handle vertical stacking on very narrow screens
+    const hud = document.getElementById('hud');
+    if (hud) {
+        if (containerWidth < 400) {
+            // Stack vertically on very narrow screens
+            hud.style.flexDirection = 'column';
+            hud.style.alignItems = 'flex-start';
+            hud.style.gap = '8px';
+        } else if (containerWidth <= BREAKPOINT_TABLET) {
+            // Horizontal with wrap on tablets
+            hud.style.flexDirection = 'row';
+            hud.style.alignItems = 'stretch';
+            hud.style.gap = '5px';
+        } else {
+            // Side-by-side on desktop
+            hud.style.flexDirection = 'row';
+            hud.style.alignItems = 'stretch';
+            hud.style.gap = '';
+        }
+    }
+}
+
+/**
  * Update HUD display
  */
 function updateHUD() {
     if (!gameState) return;
-    
+
     document.getElementById('score').textContent = gameState.score;
     document.getElementById('combo').textContent = gameState.combo + 'x';
     document.getElementById('waves').textContent = gameState.successful_waves;
