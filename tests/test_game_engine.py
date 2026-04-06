@@ -198,7 +198,7 @@ class TestWaveGame:
 
 class TestGameAPI:
     """Test Python API functions exposed to JavaScript"""
-    
+
     def test_init_game_function(self):
         """Test init_game API function"""
         from game_engine import init_game
@@ -206,7 +206,7 @@ class TestGameAPI:
         data = json.loads(result)
         assert data['status'] == 'initialized'
         assert data['sectors'] == 12
-        
+
     def test_update_game_function(self):
         """Test update_game API function"""
         from game_engine import init_game, update_game
@@ -215,7 +215,7 @@ class TestGameAPI:
         state = json.loads(result)
         assert 'sectors' in state
         assert 'score' in state
-        
+
     def test_start_wave_at_function(self):
         """Test start_wave_at API function"""
         from game_engine import init_game, start_wave_at
@@ -224,7 +224,7 @@ class TestGameAPI:
         data = json.loads(result)
         assert 'success' in data
         assert data['sector'] == 0
-        
+
     def test_get_game_state_function(self):
         """Test get_game_state API function"""
         from game_engine import init_game, get_game_state
@@ -242,15 +242,131 @@ class TestGameAPI:
 
         events = json.loads(get_events())
         assert any(event['type'] == 'scoreboard' for event in events)
-        
+
     def test_save_load_functions(self):
         """Test save_game and load_game API functions"""
         from game_engine import init_game, save_game, load_game
         init_game(8)
-        
+
         save_data = save_game()
         assert save_data is not None
-        
+
         result = load_game(save_data)
         data = json.loads(result)
         assert data['status'] == 'loaded'
+
+
+class TestSpecialWavePatterns:
+    """Test special wave pattern functionality"""
+
+    def test_reverse_wave_pattern(self):
+        """Test reverse wave propagates counter-clockwise"""
+        game = WaveGame(8)
+
+        # Set all sectors ready
+        for sector in game.sectors:
+            sector.energy = 0.8
+            sector.enthusiasm = 0.8
+
+        # Start a reverse wave
+        game.start_wave(0, pattern='reverse')
+        assert game.wave_pattern == 'reverse'
+        assert game.wave_direction == -1
+        assert game.current_wave_sector == 0
+
+        # Update to propagate
+        game.update(0.5)
+
+        # Should have moved counter-clockwise to sector 7
+        assert game.current_wave_sector == 7 or game.sectors[7].state in [SectorState.ANTICIPATING, SectorState.STANDING]
+
+    def test_double_wave_pattern(self):
+        """Test double wave starts two waves"""
+        game = WaveGame(16)
+
+        # Set all sectors ready
+        for sector in game.sectors:
+            sector.energy = 0.8
+            sector.enthusiasm = 0.8
+
+        # Start a double wave
+        game.start_wave(0, pattern='double')
+        assert game.wave_pattern == 'double'
+        assert game.wave_active == True
+        assert game.second_wave_active == True
+        assert game.wave_start_sector == 0
+        # Opposite sector should be 8 (16 / 2)
+        assert game.second_wave_start_sector == 8
+
+    def test_accelerating_wave_pattern(self):
+        """Test accelerating wave increases speed"""
+        game = WaveGame(8)
+
+        # Set all sectors ready
+        for sector in game.sectors:
+            sector.energy = 0.8
+            sector.enthusiasm = 0.8
+
+        # Start an accelerating wave
+        game.start_wave(0, pattern='accelerating')
+        assert game.wave_pattern == 'accelerating'
+        initial_speed = game.wave_speed
+
+        # Update multiple times to see speed change
+        for _ in range(3):
+            game.update(0.35)
+
+        # Speed should have decreased (faster)
+        assert game.wave_speed < initial_speed
+
+    def test_pattern_bonus_scoring(self):
+        """Test different patterns have different bonus multipliers"""
+        # Test reverse pattern bonus
+        game = WaveGame(8)
+        for sector in game.sectors:
+            sector.energy = 0.8
+            sector.enthusiasm = 0.8
+
+        game.wave_pattern = 'reverse'
+        game.combo = 5
+        initial_score = game.score
+        game.complete_wave()
+        reverse_score_gain = game.score - initial_score
+
+        # Test normal pattern bonus
+        game2 = WaveGame(8)
+        game2.wave_pattern = 'normal'
+        game2.combo = 5
+        initial_score2 = game2.score
+        game2.complete_wave()
+        normal_score_gain = game2.score - initial_score2
+
+        # Reverse should give more points than normal
+        assert reverse_score_gain > normal_score_gain
+
+    def test_random_pattern_selection(self):
+        """Test that pattern selection chooses from available patterns"""
+        game = WaveGame(8)
+
+        patterns = set()
+        for _ in range(20):
+            game.select_wave_pattern()
+            patterns.add(game.wave_pattern)
+
+        # Should have selected at least 2 different patterns
+        assert len(patterns) >= 2
+        # All patterns should be valid
+        assert all(p in ['normal', 'reverse', 'double', 'accelerating'] for p in patterns)
+
+    def test_wave_state_includes_pattern_info(self):
+        """Test that game state includes pattern information"""
+        game = WaveGame(8)
+        game.start_wave(0, pattern='reverse')
+
+        state = game.get_state()
+        assert 'wave_pattern' in state
+        assert state['wave_pattern'] == 'reverse'
+        assert 'wave_direction' in state
+        assert state['wave_direction'] == -1
+        assert 'second_wave_active' in state
+        assert 'second_current_wave_sector' in state
