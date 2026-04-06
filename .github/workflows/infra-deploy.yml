@@ -37,7 +37,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}  # from your federated credential app registration
 
       - name: Set up Azure CLI
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           azcliversion: latest
           inlineScript: |
@@ -46,7 +46,7 @@ jobs:
 
       # OPTIONAL: ensure resource group exists
       - name: Ensure resource group exists
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           azcliversion: latest
           inlineScript: |
@@ -55,7 +55,7 @@ jobs:
               --location "$AZURE_LOCATION"
 
       - name: Deploy Bicep to resource group
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           azcliversion: latest
           inlineScript: |
