@@ -1571,12 +1571,27 @@ function setupInputHandlers() {
         touchStartTime = Date.now();
     }, { passive: false });
     
+    canvas.addEventListener('touchmove', (e) => {
+        if (!isGameRunning || isPaused) {
+            hoveredSector = -1;
+            return;
+        }
+        e.preventDefault();
+
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        hoveredSector = getSectorAtPosition(x, y);
+    }, { passive: false });
+
     canvas.addEventListener('touchend', (e) => {
         if (!isGameRunning || isPaused) return;
         e.preventDefault();
-        
+
         const touchDuration = Date.now() - touchStartTime;
-        
+
         if (touchStartSector >= 0) {
             // Long press (>500ms) = boost energy
             // Short tap = start wave
@@ -1587,9 +1602,10 @@ function setupInputHandlers() {
                 startWave(touchStartSector);
             }
         }
-        
+
         touchStartSector = -1;
         touchStartTime = 0;
+        hoveredSector = -1;
     }, { passive: false });
     
     // Keyboard controls
