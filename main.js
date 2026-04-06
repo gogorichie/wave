@@ -31,6 +31,8 @@ let fieldType = 'soccer';
 let stadiumType = 'classic';
 let eventIntervals = [];
 let activeEventIndicators = [];
+let lastAutoSaveTime = 0;
+const AUTO_SAVE_INTERVAL = 30000; // Auto-save every 30 seconds
 
 const SOUND_PROFILES = {
     success: {
@@ -167,6 +169,104 @@ function savePerformanceTier() {
 }
 
 /**
+ * Save game state to localStorage with quota error handling
+ */
+function saveGameState() {
+    if (!gameState) return;
+
+    try {
+        const gameData = {
+            gameState: gameState,
+            waveAttempts: waveAttempts,
+            successfulWaves: successfulWaves,
+            currentStreak: currentStreak,
+            totalGameTime: totalGameTime,
+            difficulty: difficulty,
+            fieldType: fieldType,
+            stadiumType: stadiumType,
+            timestamp: Date.now()
+        };
+
+        const serialized = JSON.stringify(gameData);
+
+        // Check if we're approaching quota limits (5MB typical limit)
+        if (serialized.length > 4 * 1024 * 1024) {
+            console.warn('Game state is large, may exceed localStorage quota');
+        }
+
+        localStorage.setItem('wave_game_state', serialized);
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+            console.error('localStorage quota exceeded. Cannot save game state.');
+            showNotification('Storage full - unable to save game state', 'error');
+        } else {
+            console.warn('Could not save game state to localStorage:', e.message);
+        }
+    }
+}
+
+/**
+ * Load game state from localStorage
+ * @returns {boolean} true if state was loaded successfully
+ */
+function loadGameState() {
+    try {
+        const serialized = localStorage.getItem('wave_game_state');
+        if (!serialized) return false;
+
+        const gameData = JSON.parse(serialized);
+
+        // Validate the loaded data has required fields
+        if (!gameData.gameState || !gameData.timestamp) {
+            console.warn('Invalid game state data in localStorage');
+            return false;
+        }
+
+        // Check if saved state is not too old (e.g., 7 days)
+        const age = Date.now() - gameData.timestamp;
+        const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+        if (age > maxAge) {
+            console.log('Saved game state is too old, starting fresh');
+            localStorage.removeItem('wave_game_state');
+            return false;
+        }
+
+        // Restore state
+        gameState = gameData.gameState;
+        waveAttempts = gameData.waveAttempts || 0;
+        successfulWaves = gameData.successfulWaves || 0;
+        currentStreak = gameData.currentStreak || 0;
+        totalGameTime = gameData.totalGameTime || 0;
+        difficulty = gameData.difficulty || 'medium';
+        fieldType = gameData.fieldType || 'soccer';
+        stadiumType = gameData.stadiumType || 'classic';
+
+        console.log('Game state loaded from localStorage');
+        return true;
+    } catch (e) {
+        console.warn('Could not load game state from localStorage:', e.message);
+        // Remove corrupted data
+        try {
+            localStorage.removeItem('wave_game_state');
+        } catch (removeError) {
+            // Ignore errors when trying to remove
+        }
+        return false;
+    }
+}
+
+/**
+ * Clear saved game state from localStorage
+ */
+function clearGameState() {
+    try {
+        localStorage.removeItem('wave_game_state');
+    } catch (e) {
+        console.warn('Could not clear game state from localStorage');
+    }
+}
+
+/**
  * Detect device capabilities and set performance tier
  */
 function detectPerformanceTier() {
@@ -271,7 +371,7 @@ function setupVisibilityHandler() {
     // Handle visibility change
     document.addEventListener('visibilitychange', () => {
         isTabVisible = !document.hidden;
-        
+
         if (isTabVisible) {
             console.log('Tab visible - resuming normal rendering');
             // Reset lastTime to prevent large dt jump
@@ -282,6 +382,10 @@ function setupVisibilityHandler() {
             console.log('Tab hidden - throttling rendering');
             // Initialize hidden update time to current time to start throttling
             lastHiddenUpdateTime = performance.now();
+            // Auto-save game state when tab becomes hidden
+            if (isGameRunning && gameState) {
+                saveGameState();
+            }
         }
     });
 }
@@ -525,11 +629,13 @@ function togglePause() {
     isPaused = !isPaused;
     const pauseOverlay = document.getElementById('pause-overlay');
     const pauseBtn = document.getElementById('pause-btn');
-    
+
     if (isPaused) {
         pauseOverlay.classList.remove('hidden');
         pauseBtn.textContent = '▶';
         pauseBtn.title = 'Resume Game';
+        // Auto-save when pausing
+        saveGameState();
     } else {
         pauseOverlay.classList.add('hidden');
         pauseBtn.textContent = '⏸';
@@ -761,8 +867,8 @@ function setupCanvas() {
     offscreenCanvas = document.createElement('canvas');
     offscreenCtx = offscreenCanvas.getContext('2d');
     
-    // Debounced resize handler
-    const debouncedResize = debounce(() => {
+    // Shared resize logic that handles layout recomputation
+    const handleResize = () => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
         precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
@@ -774,15 +880,25 @@ function setupCanvas() {
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
-        
+
         // Force a redraw without full re-initialization
+        // Game state is preserved - only rendering is updated
         if (gameState) {
             render();
         }
-    }, 150);
-    
-    // Handle resize
+    };
+
+    // Debounced resize handler for regular resize events
+    const debouncedResize = debounce(handleResize, 150);
+
+    // Handle resize events
     window.addEventListener('resize', debouncedResize);
+
+    // Handle orientation changes immediately (no debounce for better responsiveness)
+    window.addEventListener('orientationchange', () => {
+        // Small delay to ensure viewport has updated after orientation change
+        setTimeout(handleResize, 100);
+    });
 }
 
 /**
@@ -1435,14 +1551,20 @@ function gameLoop(timestamp) {
     if (!isPaused) {
         // Update game state
         updateGameState(cappedDt);
-        
+
         // Update stats
         updateStats(cappedDt);
+
+        // Periodic auto-save (every 30 seconds)
+        if (timestamp - lastAutoSaveTime > AUTO_SAVE_INTERVAL) {
+            saveGameState();
+            lastAutoSaveTime = timestamp;
+        }
     }
-    
+
     // Always render (so we can see pause state)
     render();
-    
+
     // Continue loop
     animationId = requestAnimationFrame(gameLoop);
 }
