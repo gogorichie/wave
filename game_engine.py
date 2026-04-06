@@ -31,20 +31,24 @@ class CrowdSector:
         
     def update(self, dt: float):
         """Update sector state over time"""
+        # Validate dt to prevent issues
+        if not isinstance(dt, (int, float)) or dt < 0 or dt > 1:
+            dt = max(0, min(dt, 0.1))
+
         # Recover energy slowly
         if self.fatigue > 0:
             self.fatigue = max(0, self.fatigue - dt * 0.05)
-            
+
         # Energy regeneration
         if self.energy < 1.0:
             self.energy = min(1.0, self.energy + dt * 0.1)
-            
+
         # Handle state transitions
         if self.state == SectorState.STANDING:
             self.timer += dt
             if self.timer > 1.5:  # Stand for 1.5 seconds
                 self.sit_down()
-                
+
         elif self.state == SectorState.ANTICIPATING:
             self.timer += dt
             if self.timer > 0.5:  # Anticipate for 0.5 seconds
@@ -128,7 +132,11 @@ class WaveGame:
         """Player initiates wave from specific sector"""
         if self.wave_active:
             return False
-            
+
+        # Validate sector_id
+        if not isinstance(sector_id, int) or sector_id < 0 or sector_id >= self.num_sectors:
+            return False
+
         sector = self.sectors[sector_id]
         if sector.start_wave():
             self.wave_active = True
@@ -141,16 +149,20 @@ class WaveGame:
     
     def update(self, dt: float):
         """Update game state"""
+        # Validate dt to prevent issues
+        if not isinstance(dt, (int, float)) or dt < 0 or dt > 1:
+            dt = max(0, min(dt, 0.1))
+
         self.time_elapsed += dt
-        
+
         # Update all sectors
         for sector in self.sectors:
             sector.update(dt)
-            
+
         # Handle wave propagation
         if self.wave_active:
             self.wave_timer += dt
-            
+
             # Check if anticipating sector should stand
             current = self.sectors[self.current_wave_sector]
             if current.state == SectorState.ANTICIPATING:
@@ -159,12 +171,12 @@ class WaveGame:
                     if current.stand_up():
                         self.combo += 1
                         self.score += 10 * self.combo
-                        
+
             # Propagate wave to next sector
             if self.wave_timer >= self.wave_speed:
                 next_sector_id = (self.current_wave_sector + 1) % self.num_sectors
                 next_sector = self.sectors[next_sector_id]
-                
+
                 # Check if wave completed full circle
                 if next_sector_id == self.wave_start_sector:
                     self.complete_wave()
@@ -176,7 +188,7 @@ class WaveGame:
                     else:
                         # Wave failed
                         self.fail_wave()
-        
+
         # Process scheduled events
         self.process_events()
         
