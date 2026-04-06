@@ -23,14 +23,20 @@ class MockCrowdSector {
     }
 
     update(dt) {
+        // Validate dt to prevent NaN or Infinity
+        if (!Number.isFinite(dt) || dt < 0 || dt > 1) {
+            console.warn(`Invalid dt value: ${dt}, clamping to safe range`);
+            dt = Math.max(0, Math.min(dt, 0.1));
+        }
+
         if (this.fatigue > 0) {
             this.fatigue = Math.max(0, this.fatigue - dt * 0.05);
         }
-        
+
         if (this.energy < 1.0) {
             this.energy = Math.min(1.0, this.energy + dt * 0.1);
         }
-        
+
         if (this.state === MockSectorState.STANDING) {
             this.timer += dt;
             if (this.timer > 1.5) {
@@ -120,7 +126,13 @@ class MockWaveGame {
         if (this.wave_active) {
             return false;
         }
-        
+
+        // Validate sector_id
+        if (!Number.isInteger(sector_id) || sector_id < 0 || sector_id >= this.num_sectors) {
+            console.warn(`Invalid sector_id: ${sector_id}`);
+            return false;
+        }
+
         const sector = this.sectors[sector_id];
         if (sector.start_wave()) {
             this.wave_active = true;
@@ -134,15 +146,21 @@ class MockWaveGame {
     }
 
     update(dt) {
+        // Validate dt to prevent NaN or Infinity
+        if (!Number.isFinite(dt) || dt < 0 || dt > 1) {
+            console.warn(`Invalid dt value in game update: ${dt}, clamping to safe range`);
+            dt = Math.max(0, Math.min(dt, 0.1));
+        }
+
         this.time_elapsed += dt;
-        
+
         for (const sector of this.sectors) {
             sector.update(dt);
         }
-        
+
         if (this.wave_active) {
             this.wave_timer += dt;
-            
+
             const current = this.sectors[this.current_wave_sector];
             if (current.state === MockSectorState.ANTICIPATING) {
                 if (this.wave_timer > 0.2) {
@@ -152,11 +170,11 @@ class MockWaveGame {
                     }
                 }
             }
-            
+
             if (this.wave_timer >= this.wave_speed) {
                 const next_sector_id = (this.current_wave_sector + 1) % this.num_sectors;
                 const next_sector = this.sectors[next_sector_id];
-                
+
                 if (next_sector_id === this.wave_start_sector) {
                     this.complete_wave();
                 } else {
