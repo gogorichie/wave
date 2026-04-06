@@ -48,6 +48,9 @@
             flex: 1;
             display: block;
             cursor: pointer;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         #loading {
@@ -648,13 +651,15 @@
 
         /* Touch device improvements */
         @media (hover: none) and (pointer: coarse) {
-            #game-canvas {
-                touch-action: none;
-            }
-
             #controls button,
             #tutorial button,
             #pause-overlay button {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            #help-toggle,
+            #pause-btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -723,9 +728,9 @@
 
         <div id="tutorial">
             <h2>🌊 Stadium Wave Game</h2>
-            <p>Click on any crowd sector to start the wave!</p>
+            <p>Click or tap any crowd sector to start the wave!</p>
             <p>Keep the energy high and the combo going.</p>
-            <p>⚡ <strong>Right-click</strong> sectors to boost their energy.</p>
+            <p>⚡ <strong>Right-click or long press</strong> sectors to boost their energy.</p>
             <p>⌨️ <strong>Spacebar</strong> starts wave at sector 0.</p>
             <div class="settings-panel">
                 <label>
@@ -768,6 +773,8 @@
             <ul>
                 <li>🖱️ <strong>Left-click</strong> sector to start wave</li>
                 <li>🖱️ <strong>Right-click</strong> sector to boost energy</li>
+                <li>📱 <strong>Tap</strong> sector to start wave (mobile)</li>
+                <li>📱 <strong>Long press</strong> sector to boost (mobile)</li>
                 <li>⌨️ <strong>Space</strong> to start wave at sector 0</li>
                 <li>⌨️ <strong>P</strong> to pause/resume</li>
                 <li>⌨️ <strong>F</strong> for fullscreen</li>
