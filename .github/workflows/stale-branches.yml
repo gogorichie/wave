@@ -31,8 +31,8 @@ jobs:
 
           echo "Scanning for branches with no commits in the last $STALE_DAYS days..."
 
-          page=1
           deleted=0
+          page=1
           while :; do
             RESPONSE=$(curl -sS \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -44,7 +44,10 @@ jobs:
               break
             fi
 
-            echo "$RESPONSE" | jq -r '.[].name' | while read -r BRANCH; do
+            # Collect branch names into an array to avoid subshell counter issue
+            mapfile -t BRANCHES < <(echo "$RESPONSE" | jq -r '.[].name')
+
+            for BRANCH in "${BRANCHES[@]}"; do
               # Skip protected branches
               if [[ "$BRANCH" =~ $PROTECTED_REGEX ]]; then
                 continue

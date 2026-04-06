@@ -35,7 +35,7 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-approve major updates (requires manual merge)
+      - name: Log major updates for manual review
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'
         run: |
           echo "⚠ Major version update detected — auto-approve skipped."
