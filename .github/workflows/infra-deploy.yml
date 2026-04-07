@@ -30,35 +30,26 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
           client-id: ${{ secrets.AZURE_CLIENT_ID }}  # from your federated credential app registration
 
       - name: Set up Azure CLI
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           azcliversion: latest
           inlineScript: |
             echo "Azure CLI version:"
             az version
 
-      # OPTIONAL: ensure resource group exists
-      - name: Ensure resource group exists
-        uses: azure/CLI@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
+            echo "Ensuring resource group exists..."
             az group create \
               --name "$AZURE_RESOURCE_GROUP" \
               --location "$AZURE_LOCATION"
 
-      - name: Deploy Bicep to resource group
-        uses: azure/CLI@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
+            echo "Deploying Bicep template..."
             az deployment group create \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --template-file "$BICEP_FILE" \

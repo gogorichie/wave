@@ -32,6 +32,9 @@ let stadiumType = 'classic';
 let eventIntervals = [];
 let activeEventIndicators = [];
 
+// Event listener cleanup
+let eventListeners = [];
+
 const SOUND_PROFILES = {
     success: {
         wave: 'triangle',
@@ -139,6 +142,20 @@ const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
 const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
 const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
 
+// Performance metrics
+let performanceMetrics = {
+    frameTimings: [],
+    renderTimings: [],
+    updateTimings: [],
+    lastGCTime: 0,
+    avgFrameTime: 0,
+    peakFrameTime: 0
+};
+
+// Object pools for performance
+const notificationPool = [];
+const MAX_POOL_SIZE = 10;
+
 /**
  * Get effective pixel ratio for a given performance tier
  */
@@ -222,20 +239,23 @@ function detectPerformanceTier() {
  */
 function monitorPerformance(timestamp) {
     frameCount++;
-    
+
     // Calculate FPS every second
     if (timestamp - lastFrameTime >= 1000) {
         const fps = frameCount;
         fpsHistory.push(fps);
-        
+
         // Keep only last 5 seconds of history
         if (fpsHistory.length > 5) {
             fpsHistory.shift();
         }
-        
+
         // Calculate average FPS
         const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
-        
+
+        // Update performance metrics
+        performanceMetrics.avgFrameTime = 1000 / avgFps;
+
         // Auto-downgrade if consistently low FPS
         if (avgFps < LOW_FPS_THRESHOLD && performanceTier !== 'low') {
             console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
@@ -244,12 +264,12 @@ function monitorPerformance(timestamp) {
             } else if (performanceTier === 'medium') {
                 performanceTier = 'low';
             }
-            
+
             effectivePixelRatio = getEffectivePixelRatio(performanceTier);
-            
+
             // Save updated tier to localStorage
             savePerformanceTier();
-            
+
             // Trigger canvas resize to apply new DPR
             const container = document.getElementById('game-container');
             if (container && canvas && ctx) {
@@ -258,10 +278,56 @@ function monitorPerformance(timestamp) {
                                     dimensions.width / 2, dimensions.height / 2);
             }
         }
-        
+
         frameCount = 0;
         lastFrameTime = timestamp;
     }
+}
+
+/**
+ * Collect performance metrics
+ */
+function collectPerformanceMetrics(frameTime, renderTime, updateTime) {
+    const metrics = performanceMetrics;
+
+    // Track frame timings (keep last 60 frames)
+    metrics.frameTimings.push(frameTime);
+    if (metrics.frameTimings.length > 60) {
+        metrics.frameTimings.shift();
+    }
+
+    // Track render timings
+    metrics.renderTimings.push(renderTime);
+    if (metrics.renderTimings.length > 60) {
+        metrics.renderTimings.shift();
+    }
+
+    // Track update timings
+    metrics.updateTimings.push(updateTime);
+    if (metrics.updateTimings.length > 60) {
+        metrics.updateTimings.shift();
+    }
+
+    // Calculate peak frame time
+    metrics.peakFrameTime = Math.max(metrics.peakFrameTime, frameTime);
+}
+
+/**
+ * Get performance statistics
+ */
+function getPerformanceStats() {
+    const metrics = performanceMetrics;
+    return {
+        avgFrameTime: metrics.avgFrameTime,
+        peakFrameTime: metrics.peakFrameTime,
+        avgRenderTime: metrics.renderTimings.length > 0
+            ? metrics.renderTimings.reduce((a, b) => a + b, 0) / metrics.renderTimings.length
+            : 0,
+        avgUpdateTime: metrics.updateTimings.length > 0
+            ? metrics.updateTimings.reduce((a, b) => a + b, 0) / metrics.updateTimings.length
+            : 0,
+        performanceTier
+    };
 }
 
 /**
@@ -350,7 +416,7 @@ function initGame() {
 }
 
 /**
- * Update game state from Python
+ * Update game state from Python (with error handling)
  */
 function updateGameState(dt) {
     try {
@@ -363,15 +429,24 @@ function updateGameState(dt) {
             stateJson = pyodide.runPython(`update_game(dt_value)`);
             eventsJson = pyodide.runPython(`get_events()`);
         }
-        
+
         gameState = JSON.parse(stateJson);
         const events = JSON.parse(eventsJson);
-        
+
         events.forEach(event => handleGameEvent(event));
-        
+
         return gameState;
     } catch (error) {
         console.error('Failed to update game state:', error);
+        // Attempt recovery by reinitializing if state is corrupted
+        if (!gameState) {
+            console.warn('Game state corrupted, attempting recovery...');
+            try {
+                initGame();
+            } catch (recoveryError) {
+                console.error('Recovery failed:', recoveryError);
+            }
+        }
         return null;
     }
 }
@@ -414,19 +489,39 @@ function handleGameEvent(event) {
 }
 
 /**
- * Show notification message
+ * Show notification message (optimized with object pooling)
  */
 function showNotification(message, type = 'success') {
-    const existing = document.getElementById('notification');
-    if (existing) existing.remove();
-    
-    const notification = document.createElement('div');
-    notification.id = 'notification';
-    notification.className = type;
+    // Try to reuse existing notification from pool
+    let notification = notificationPool.pop();
+
+    if (!notification) {
+        // Create new notification if pool is empty
+        notification = document.createElement('div');
+        notification.id = 'notification';
+        notification.className = type;
+    } else {
+        // Reset notification properties
+        notification.className = type;
+    }
+
     notification.textContent = message;
+
+    // Remove existing notification if any
+    const existing = document.getElementById('notification');
+    if (existing && existing !== notification) {
+        existing.remove();
+    }
+
     document.getElementById('game-container').appendChild(notification);
-    
-    setTimeout(() => notification.remove(), 2000);
+
+    // Return notification to pool after use
+    setTimeout(() => {
+        notification.remove();
+        if (notificationPool.length < MAX_POOL_SIZE) {
+            notificationPool.push(notification);
+        }
+    }, 2000);
 }
 
 function initAudioContext() {
@@ -691,6 +786,24 @@ function debounce(func, wait) {
 }
 
 /**
+ * Add event listener with cleanup tracking
+ */
+function addTrackedEventListener(element, event, handler, options) {
+    element.addEventListener(event, handler, options);
+    eventListeners.push({ element, event, handler, options });
+}
+
+/**
+ * Remove all tracked event listeners
+ */
+function removeAllEventListeners() {
+    eventListeners.forEach(({ element, event, handler, options }) => {
+        element.removeEventListener(event, handler, options);
+    });
+    eventListeners = [];
+}
+
+/**
  * Setup high-DPI canvas with proper scaling
  */
 function setupHighDPICanvas(canvas, ctx, container) {
@@ -761,6 +874,9 @@ function setupCanvas() {
     offscreenCanvas = document.createElement('canvas');
     offscreenCtx = offscreenCanvas.getContext('2d');
     
+    // Apply initial HUD scaling
+    updateHUDScaling();
+
     // Debounced resize handler
     const debouncedResize = debounce(() => {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
@@ -774,13 +890,16 @@ function setupCanvas() {
         offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
-        
+
+        // Update HUD scaling on resize
+        updateHUDScaling();
+
         // Force a redraw without full re-initialization
         if (gameState) {
             render();
         }
     }, 150);
-    
+
     // Handle resize
     window.addEventListener('resize', debouncedResize);
 }
@@ -1392,11 +1511,83 @@ function render() {
 }
 
 /**
+ * Calculate and apply responsive HUD scaling based on canvas width
+ */
+function updateHUDScaling() {
+    const container = document.getElementById('game-container');
+    if (!container) return;
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+
+    // Define breakpoints
+    const BREAKPOINT_MOBILE = 480;
+    const BREAKPOINT_TABLET = 768;
+
+    // Calculate base font sizes as percentages of container width
+    // Use clamp to ensure min/max bounds for readability
+    let hudLabelSize, hudValueSize, hudPanelPadding, hudTop, hudHorizontalPadding;
+
+    if (containerWidth <= BREAKPOINT_MOBILE) {
+        // Small mobile: smaller fonts, compact padding
+        hudLabelSize = Math.max(10, Math.min(12, containerWidth * 0.028));  // ~2.8% of width, min 10px, max 12px
+        hudValueSize = Math.max(14, Math.min(18, containerWidth * 0.045));  // ~4.5% of width, min 14px, max 18px
+        hudPanelPadding = Math.max(6, Math.min(10, containerWidth * 0.025)); // ~2.5% of width
+        hudTop = Math.max(40, containerHeight * 0.08); // 8% from top or min 40px
+        hudHorizontalPadding = Math.max(5, containerWidth * 0.015);
+    } else if (containerWidth <= BREAKPOINT_TABLET) {
+        // Tablet: medium fonts
+        hudLabelSize = Math.max(11, Math.min(14, containerWidth * 0.018)); // ~1.8% of width
+        hudValueSize = Math.max(16, Math.min(20, containerWidth * 0.026)); // ~2.6% of width
+        hudPanelPadding = Math.max(8, Math.min(12, containerWidth * 0.02));
+        hudTop = Math.max(50, containerHeight * 0.1);
+        hudHorizontalPadding = Math.max(5, containerWidth * 0.015);
+    } else {
+        // Desktop: larger fonts
+        hudLabelSize = Math.max(14, Math.min(16, containerWidth * 0.012)); // ~1.2% of width
+        hudValueSize = Math.max(22, Math.min(28, containerWidth * 0.022)); // ~2.2% of width
+        hudPanelPadding = Math.max(15, Math.min(25, containerWidth * 0.022));
+        hudTop = 100;
+        hudHorizontalPadding = 20;
+    }
+
+    // Apply via CSS custom properties for smooth scaling
+    const root = document.documentElement;
+    root.style.setProperty('--hud-label-size', `${hudLabelSize}px`);
+    root.style.setProperty('--hud-value-size', `${hudValueSize}px`);
+    root.style.setProperty('--hud-panel-padding-v', `${hudPanelPadding}px`);
+    root.style.setProperty('--hud-panel-padding-h', `${hudPanelPadding * 1.5}px`);
+    root.style.setProperty('--hud-top', `${hudTop}px`);
+    root.style.setProperty('--hud-horizontal-padding', `${hudHorizontalPadding}px`);
+
+    // Handle vertical stacking on very narrow screens
+    const hud = document.getElementById('hud');
+    if (hud) {
+        if (containerWidth < 400) {
+            // Stack vertically on very narrow screens
+            hud.style.flexDirection = 'column';
+            hud.style.alignItems = 'flex-start';
+            hud.style.gap = '8px';
+        } else if (containerWidth <= BREAKPOINT_TABLET) {
+            // Horizontal with wrap on tablets
+            hud.style.flexDirection = 'row';
+            hud.style.alignItems = 'stretch';
+            hud.style.gap = '5px';
+        } else {
+            // Side-by-side on desktop
+            hud.style.flexDirection = 'row';
+            hud.style.alignItems = 'stretch';
+            hud.style.gap = '';
+        }
+    }
+}
+
+/**
  * Update HUD display
  */
 function updateHUD() {
     if (!gameState) return;
-    
+
     document.getElementById('score').textContent = gameState.score;
     document.getElementById('combo').textContent = gameState.combo + 'x';
     document.getElementById('waves').textContent = gameState.successful_waves;
@@ -1404,21 +1595,23 @@ function updateHUD() {
 }
 
 /**
- * Game loop
+ * Game loop (optimized with performance tracking)
  */
 let lastHiddenUpdateTime = 0;
 function gameLoop(timestamp) {
     if (!isGameRunning) return;
-    
+
+    const frameStartTime = performance.now();
+
     // Monitor performance
     monitorPerformance(timestamp);
-    
+
     const dt = lastTime ? (timestamp - lastTime) / 1000 : 0;
     lastTime = timestamp;
-    
+
     // Cap dt to prevent large jumps
     const cappedDt = Math.min(dt, 0.1);
-    
+
     // Throttle updates when tab is hidden (reduce to ~5 FPS)
     if (!isTabVisible && !isPaused) {
         // Only update every HIDDEN_TAB_UPDATE_INTERVAL when hidden
@@ -1430,19 +1623,32 @@ function gameLoop(timestamp) {
         }
         lastHiddenUpdateTime = timestamp;
     }
-    
+
+    let updateTime = 0;
+    let renderTime = 0;
+
     // Only update if not paused
     if (!isPaused) {
+        const updateStartTime = performance.now();
+
         // Update game state
         updateGameState(cappedDt);
-        
+
         // Update stats
         updateStats(cappedDt);
+
+        updateTime = performance.now() - updateStartTime;
     }
-    
+
     // Always render (so we can see pause state)
+    const renderStartTime = performance.now();
     render();
-    
+    renderTime = performance.now() - renderStartTime;
+
+    // Collect performance metrics
+    const frameTime = performance.now() - frameStartTime;
+    collectPerformanceMetrics(frameTime, renderTime, updateTime);
+
     // Continue loop
     animationId = requestAnimationFrame(gameLoop);
 }
@@ -1459,7 +1665,7 @@ function startGameLoop() {
 }
 
 /**
- * Stop game loop
+ * Stop game loop (with cleanup)
  */
 function stopGameLoop() {
     isGameRunning = false;
@@ -1468,6 +1674,18 @@ function stopGameLoop() {
         animationId = null;
     }
     clearEventTimers();
+
+    // Clean up audio nodes to prevent memory leaks
+    if (audioContext && audioContext.state !== 'closed') {
+        // Note: We don't close the audio context as it may be reused
+        // Just disconnect nodes
+        if (masterGain) {
+            masterGain.disconnect();
+        }
+        if (compressor) {
+            compressor.disconnect();
+        }
+    }
 }
 
 /**
@@ -1571,12 +1789,27 @@ function setupInputHandlers() {
         touchStartTime = Date.now();
     }, { passive: false });
     
+    canvas.addEventListener('touchmove', (e) => {
+        if (!isGameRunning || isPaused) {
+            hoveredSector = -1;
+            return;
+        }
+        e.preventDefault();
+
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        hoveredSector = getSectorAtPosition(x, y);
+    }, { passive: false });
+
     canvas.addEventListener('touchend', (e) => {
         if (!isGameRunning || isPaused) return;
         e.preventDefault();
-        
+
         const touchDuration = Date.now() - touchStartTime;
-        
+
         if (touchStartSector >= 0) {
             // Long press (>500ms) = boost energy
             // Short tap = start wave
@@ -1587,9 +1820,10 @@ function setupInputHandlers() {
                 startWave(touchStartSector);
             }
         }
-        
+
         touchStartSector = -1;
         touchStartTime = 0;
+        hoveredSector = -1;
     }, { passive: false });
     
     // Keyboard controls
