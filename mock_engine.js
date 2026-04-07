@@ -23,14 +23,19 @@ class MockCrowdSector {
     }
 
     update(dt) {
+        // Validate dt to prevent NaN or negative values
+        if (!Number.isFinite(dt) || dt < 0) {
+            dt = 0.0;
+        }
+
         if (this.fatigue > 0) {
             this.fatigue = Math.max(0, this.fatigue - dt * 0.05);
         }
-        
+
         if (this.energy < 1.0) {
             this.energy = Math.min(1.0, this.energy + dt * 0.1);
         }
-        
+
         if (this.state === MockSectorState.STANDING) {
             this.timer += dt;
             if (this.timer > 1.5) {
@@ -164,6 +169,13 @@ class MockWaveGame {
             return false;
         }
 
+        // Validate sector_id
+        if (!Number.isInteger(sector_id) || sector_id < 0 || sector_id >= this.num_sectors) {
+            console.warn(`Invalid sector_id: ${sector_id}`);
+            return false;
+        }
+
+
         const sector = this.sectors[sector_id];
         if (sector.start_wave()) {
             // Select pattern (use provided or random)
@@ -213,6 +225,12 @@ class MockWaveGame {
     }
 
     update(dt) {
+        // Validate dt to prevent NaN or negative values
+        if (!Number.isFinite(dt) || dt < 0) {
+            console.warn(`Invalid dt value in game update: ${dt}, resetting to 0`);
+            dt = 0.0;
+        }
+
         this.time_elapsed += dt;
 
         for (const sector of this.sectors) {
@@ -269,6 +287,7 @@ class MockWaveGame {
                     if (!this.wave_active) {
                         this.complete_wave();
                     }
+
                 } else {
                     // For double wave, wait for second wave to complete
                     this.wave_active = false;

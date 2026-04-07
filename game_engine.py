@@ -31,20 +31,24 @@ class CrowdSector:
         
     def update(self, dt: float):
         """Update sector state over time"""
+        # Validate dt to prevent negative or non-numeric values
+        if not isinstance(dt, (int, float)) or dt < 0:
+            dt = 0.0
+
         # Recover energy slowly
         if self.fatigue > 0:
             self.fatigue = max(0, self.fatigue - dt * 0.05)
-            
+
         # Energy regeneration
         if self.energy < 1.0:
             self.energy = min(1.0, self.energy + dt * 0.1)
-            
+
         # Handle state transitions
         if self.state == SectorState.STANDING:
             self.timer += dt
             if self.timer > 1.5:  # Stand for 1.5 seconds
                 self.sit_down()
-                
+
         elif self.state == SectorState.ANTICIPATING:
             self.timer += dt
             if self.timer > 0.5:  # Anticipate for 0.5 seconds
@@ -161,6 +165,11 @@ class WaveGame:
         if self.wave_active:
             return False
 
+        # Validate sector_id
+        if not isinstance(sector_id, int) or sector_id < 0 or sector_id >= self.num_sectors:
+            return False
+
+
         sector = self.sectors[sector_id]
         if sector.start_wave():
             # Select pattern (use provided or random)
@@ -205,6 +214,10 @@ class WaveGame:
     
     def update(self, dt: float):
         """Update game state"""
+        # Validate dt to prevent negative or non-numeric values
+        if not isinstance(dt, (int, float)) or dt < 0:
+            dt = 0.0
+
         self.time_elapsed += dt
 
         # Update all sectors

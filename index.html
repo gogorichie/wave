@@ -48,6 +48,9 @@
             flex: 1;
             display: block;
             cursor: pointer;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         #loading {
@@ -93,11 +96,21 @@
             letter-spacing: 2px;
         }
 
+        /* CSS Custom Properties for dynamic HUD scaling */
+        :root {
+            --hud-label-size: 14px;
+            --hud-value-size: 24px;
+            --hud-panel-padding-v: 15px;
+            --hud-panel-padding-h: 25px;
+            --hud-top: 100px;
+            --hud-horizontal-padding: 20px;
+        }
+
         #hud {
             position: absolute;
-            top: 100px;
-            left: 20px;
-            right: 20px;
+            top: var(--hud-top);
+            left: var(--hud-horizontal-padding);
+            right: var(--hud-horizontal-padding);
             display: flex;
             justify-content: space-between;
             pointer-events: none;
@@ -105,7 +118,7 @@
 
         .hud-panel {
             background: rgba(0, 0, 0, 0.7);
-            padding: 15px 25px;
+            padding: var(--hud-panel-padding-v) var(--hud-panel-padding-h);
             border-radius: 10px;
             backdrop-filter: blur(10px);
         }
@@ -115,12 +128,12 @@
         }
 
         .hud-label {
-            font-size: 0.9em;
+            font-size: var(--hud-label-size);
             color: #aaa;
         }
 
         .hud-value {
-            font-size: 1.5em;
+            font-size: var(--hud-value-size);
             font-weight: bold;
             color: #fff;
         }
@@ -420,16 +433,12 @@
             }
 
             #hud {
-                top: 50px;
-                left: 5px;
-                right: 5px;
-                flex-direction: row;
-                gap: 5px;
+                /* Position and layout handled by JavaScript updateHUDScaling() */
                 flex-wrap: wrap;
             }
 
             .hud-panel {
-                padding: 8px 12px;
+                /* Padding handled by JavaScript updateHUDScaling() */
                 flex: 1 1 auto;
                 min-width: 0;
             }
@@ -438,13 +447,7 @@
                 margin: 3px 0;
             }
 
-            .hud-label {
-                font-size: 0.75em;
-            }
-
-            .hud-value {
-                font-size: 1em;
-            }
+            /* Font sizes handled by JavaScript updateHUDScaling() */
 
             #help-toggle, #pause-btn {
                 width: 36px;
@@ -551,17 +554,7 @@
                 font-size: 1.5em;
             }
 
-            .hud-panel {
-                padding: 6px 10px;
-            }
-
-            .hud-label {
-                font-size: 0.7em;
-            }
-
-            .hud-value {
-                font-size: 0.95em;
-            }
+            /* HUD font sizes and padding handled by JavaScript updateHUDScaling() */
 
             #controls button {
                 padding: 10px 12px;
@@ -595,23 +588,7 @@
                 top: 3px;
             }
 
-            #hud {
-                top: 30px;
-                left: 3px;
-                right: 3px;
-            }
-
-            .hud-panel {
-                padding: 5px 8px;
-            }
-
-            .hud-label {
-                font-size: 0.65em;
-            }
-
-            .hud-value {
-                font-size: 0.85em;
-            }
+            /* HUD positioning and font sizes handled by JavaScript updateHUDScaling() */
 
             #help-toggle, #pause-btn {
                 width: 30px;
@@ -648,13 +625,15 @@
 
         /* Touch device improvements */
         @media (hover: none) and (pointer: coarse) {
-            #game-canvas {
-                touch-action: none;
-            }
-
             #controls button,
             #tutorial button,
             #pause-overlay button {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            #help-toggle,
+            #pause-btn {
                 min-height: 44px;
                 min-width: 44px;
             }
@@ -723,9 +702,9 @@
 
         <div id="tutorial">
             <h2>🌊 Stadium Wave Game</h2>
-            <p>Click on any crowd sector to start the wave!</p>
+            <p>Click or tap any crowd sector to start the wave!</p>
             <p>Keep the energy high and the combo going.</p>
-            <p>⚡ <strong>Right-click</strong> sectors to boost their energy.</p>
+            <p>⚡ <strong>Right-click or long press</strong> sectors to boost their energy.</p>
             <p>⌨️ <strong>Spacebar</strong> starts wave at sector 0.</p>
             <div class="settings-panel">
                 <label>
@@ -768,6 +747,8 @@
             <ul>
                 <li>🖱️ <strong>Left-click</strong> sector to start wave</li>
                 <li>🖱️ <strong>Right-click</strong> sector to boost energy</li>
+                <li>📱 <strong>Tap</strong> sector to start wave (mobile)</li>
+                <li>📱 <strong>Long press</strong> sector to boost (mobile)</li>
                 <li>⌨️ <strong>Space</strong> to start wave at sector 0</li>
                 <li>⌨️ <strong>P</strong> to pause/resume</li>
                 <li>⌨️ <strong>F</strong> for fullscreen</li>
