@@ -21,6 +21,11 @@ A browser-based interactive game where players orchestrate the stadium "wave" by
 
 - **Customizable Field**: Choose between soccer, football, and baseball fields.
 - **Interactive Wave Mechanics**: Click on crowd sectors to initiate and propagate waves around the stadium
+- **Special Wave Patterns**: Every wave randomly selects from four unique patterns:
+  - **Normal**: Classic clockwise wave
+  - **Reverse**: Counter-clockwise wave (1.5x bonus multiplier)
+  - **Double**: Two simultaneous waves from opposite sides (2x bonus multiplier)
+  - **Accelerating**: Wave starts slow and progressively gets faster (1.3x bonus multiplier)
 - **Crowd Simulation**: 16 AI-controlled sectors with individual states (idle, anticipating, standing, seated)
 - **Energy & Fatigue System**: Sectors have dynamic energy levels that affect wave readiness
 - **Combo System**: Chain successful wave propagations for multiplier bonuses
@@ -162,22 +167,27 @@ Each sector has:
 
 ### Wave Propagation
 
-- Waves travel clockwise around the stadium
+- Waves can travel clockwise or counter-clockwise (depending on pattern)
+- Four different wave patterns add variety and challenge:
+  - **Normal**: Traditional clockwise propagation
+  - **Reverse**: Goes backwards (counter-clockwise) for a twist
+  - **Double**: Two waves race from opposite sides of the stadium
+  - **Accelerating**: Starts at normal speed but gets progressively faster
 - Sectors must be ready (sufficient energy, low fatigue)
 - Failed propagation ends the wave and resets combo
-- Successful full circles award completion bonuses
+- Successful full circles award completion bonuses with pattern multipliers
 
 ## Future Enhancements
 
 Potential additions:
 
 - Multiple stadium venues with varying difficulty
-- Special wave patterns (reverse-wave, double-wave)
 - Weather effects and day/night cycles
-- Mascot events and scoreboard interactions
+- Enhanced mascot events and scoreboard interactions
 - Cosmetic unlocks (foam fingers, flags)
 - Highlight reel GIF export
 - Progressive difficulty campaign mode
+- Additional wave patterns (spiral, split, cascade)
 
 ## License
 

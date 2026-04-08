@@ -31,20 +31,24 @@ class CrowdSector:
         
     def update(self, dt: float):
         """Update sector state over time"""
+        # Validate dt to prevent negative or non-numeric values
+        if not isinstance(dt, (int, float)) or dt < 0:
+            dt = 0.0
+
         # Recover energy slowly
         if self.fatigue > 0:
             self.fatigue = max(0, self.fatigue - dt * 0.05)
-            
+
         # Energy regeneration
         if self.energy < 1.0:
             self.energy = min(1.0, self.energy + dt * 0.1)
-            
+
         # Handle state transitions
         if self.state == SectorState.STANDING:
             self.timer += dt
             if self.timer > 1.5:  # Stand for 1.5 seconds
                 self.sit_down()
-                
+
         elif self.state == SectorState.ANTICIPATING:
             self.timer += dt
             if self.timer > 0.5:  # Anticipate for 0.5 seconds
@@ -102,7 +106,7 @@ class CrowdSector:
 
 class WaveGame:
     """Main game state manager"""
-    
+
     def __init__(self, num_sectors: int = 16):
         self.num_sectors = num_sectors
         self.sectors: List[CrowdSector] = [
@@ -123,81 +127,217 @@ class WaveGame:
         self.events = []
         self.stadium_level = 1
         self.unlocks = []
+
+        # Special wave pattern support
+        self.wave_pattern = 'normal'  # normal, reverse, double, accelerating
+        self.wave_direction = 1  # 1 for clockwise, -1 for counter-clockwise
+        self.base_wave_speed = 0.3
+        self.speed_increment = 0.0  # for accelerating pattern
+        self.sectors_traveled = 0
+
+        # Double wave support
+        self.second_wave_active = False
+        self.second_wave_start_sector = -1
+        self.second_current_wave_sector = -1
+        self.second_wave_timer = 0.0
         
-    def start_wave(self, sector_id: int) -> bool:
+    def select_wave_pattern(self):
+        """Randomly select a wave pattern"""
+        patterns = ['normal', 'reverse', 'double', 'accelerating']
+        weights = [0.4, 0.2, 0.2, 0.2]  # Normal is most common
+        self.wave_pattern = random.choices(patterns, weights=weights)[0]
+
+        if self.wave_pattern == 'reverse':
+            self.wave_direction = -1
+        elif self.wave_pattern == 'double':
+            self.wave_direction = 1
+        elif self.wave_pattern == 'accelerating':
+            self.wave_direction = 1
+            self.speed_increment = -0.015  # Get faster over time
+        else:  # normal
+            self.wave_direction = 1
+
+        self.sectors_traveled = 0
+        self.wave_speed = self.base_wave_speed
+
+    def start_wave(self, sector_id: int, pattern: Optional[str] = None) -> bool:
         """Player initiates wave from specific sector"""
         if self.wave_active:
             return False
-            
+
+        # Validate sector_id
+        if not isinstance(sector_id, int) or sector_id < 0 or sector_id >= self.num_sectors:
+            return False
+
+
         sector = self.sectors[sector_id]
         if sector.start_wave():
+            # Select pattern (use provided or random)
+            if pattern:
+                self.wave_pattern = pattern
+                # Set direction and speed based on pattern
+                if self.wave_pattern == 'reverse':
+                    self.wave_direction = -1
+                elif self.wave_pattern == 'double':
+                    self.wave_direction = 1
+                elif self.wave_pattern == 'accelerating':
+                    self.wave_direction = 1
+                    self.speed_increment = -0.015
+                else:  # normal
+                    self.wave_direction = 1
+                self.sectors_traveled = 0
+                self.wave_speed = self.base_wave_speed
+            else:
+                self.select_wave_pattern()
+
             self.wave_active = True
             self.wave_start_sector = sector_id
             self.current_wave_sector = sector_id
             self.wave_timer = 0.0
-            self.schedule_event('wave_started', sector_id)
+
+            # For double wave, start second wave on opposite side
+            if self.wave_pattern == 'double':
+                opposite_sector = (sector_id + self.num_sectors // 2) % self.num_sectors
+                if self.sectors[opposite_sector].start_wave():
+                    self.second_wave_active = True
+                    self.second_wave_start_sector = opposite_sector
+                    self.second_current_wave_sector = opposite_sector
+                    self.second_wave_timer = 0.0
+
+            self.schedule_event('wave_started', {
+                'sector': sector_id,
+                'pattern': self.wave_pattern,
+                'direction': 'clockwise' if self.wave_direction == 1 else 'counter-clockwise'
+            })
             return True
         return False
     
     def update(self, dt: float):
         """Update game state"""
+        # Validate dt to prevent negative or non-numeric values
+        if not isinstance(dt, (int, float)) or dt < 0:
+            dt = 0.0
+
         self.time_elapsed += dt
-        
+
         # Update all sectors
         for sector in self.sectors:
             sector.update(dt)
-            
-        # Handle wave propagation
+
+        # Handle wave propagation for first wave
         if self.wave_active:
-            self.wave_timer += dt
-            
-            # Check if anticipating sector should stand
-            current = self.sectors[self.current_wave_sector]
-            if current.state == SectorState.ANTICIPATING:
-                # Stand up after brief anticipation
-                if self.wave_timer > 0.2:
-                    if current.stand_up():
-                        self.combo += 1
-                        self.score += 10 * self.combo
-                        
-            # Propagate wave to next sector
-            if self.wave_timer >= self.wave_speed:
-                next_sector_id = (self.current_wave_sector + 1) % self.num_sectors
-                next_sector = self.sectors[next_sector_id]
-                
-                # Check if wave completed full circle
-                if next_sector_id == self.wave_start_sector:
-                    self.complete_wave()
-                else:
-                    # Propagate to next sector
-                    if next_sector.start_wave():
-                        self.current_wave_sector = next_sector_id
-                        self.wave_timer = 0.0
-                    else:
-                        # Wave failed
-                        self.fail_wave()
-        
+            self._update_wave(dt, is_second_wave=False)
+
+        # Handle second wave for double pattern
+        if self.second_wave_active:
+            self._update_wave(dt, is_second_wave=True)
+
         # Process scheduled events
         self.process_events()
+
+    def _update_wave(self, dt: float, is_second_wave: bool = False):
+        """Update a single wave (primary or secondary for double pattern)"""
+        if is_second_wave:
+            wave_timer = self.second_wave_timer
+            current_sector = self.second_current_wave_sector
+            start_sector = self.second_wave_start_sector
+        else:
+            wave_timer = self.wave_timer
+            current_sector = self.current_wave_sector
+            start_sector = self.wave_start_sector
+
+        wave_timer += dt
+
+        # Check if anticipating sector should stand
+        current = self.sectors[current_sector]
+        if current.state == SectorState.ANTICIPATING:
+            # Stand up after brief anticipation
+            if wave_timer > 0.2:
+                if current.stand_up():
+                    self.combo += 1
+                    self.score += 10 * self.combo
+
+        # Propagate wave to next sector
+        if wave_timer >= self.wave_speed:
+            # For accelerating pattern, increase speed
+            if self.wave_pattern == 'accelerating' and not is_second_wave:
+                self.wave_speed = max(0.1, self.wave_speed + self.speed_increment)
+                self.sectors_traveled += 1
+
+            # Calculate next sector based on direction
+            next_sector_id = (current_sector + self.wave_direction) % self.num_sectors
+            next_sector = self.sectors[next_sector_id]
+
+            # Check if wave completed full circle
+            if next_sector_id == start_sector:
+                if is_second_wave:
+                    self.second_wave_active = False
+                    # Check if both waves completed
+                    if not self.wave_active:
+                        self.complete_wave()
+                else:
+                    # For double wave, wait for second wave to complete
+                    self.wave_active = False
+                    if not self.second_wave_active or self.wave_pattern != 'double':
+                        self.complete_wave()
+            else:
+                # Propagate to next sector
+                if next_sector.start_wave():
+                    if is_second_wave:
+                        self.second_current_wave_sector = next_sector_id
+                        self.second_wave_timer = 0.0
+                    else:
+                        self.current_wave_sector = next_sector_id
+                        self.wave_timer = 0.0
+                else:
+                    # Wave failed
+                    if is_second_wave:
+                        self.second_wave_active = False
+                    else:
+                        self.wave_active = False
+                        self.second_wave_active = False  # Both waves fail
+                    self.fail_wave()
+
+        # Update timer
+        if is_second_wave:
+            self.second_wave_timer = wave_timer
+        else:
+            self.wave_timer = wave_timer
         
     def complete_wave(self):
         """Wave successfully completed full stadium"""
         self.wave_active = False
+        self.second_wave_active = False
         self.successful_waves += 1
-        bonus = 100 * (1 + self.combo * 0.5)
+
+        # Bonus multiplier for special patterns
+        pattern_bonus = 1.0
+        if self.wave_pattern == 'reverse':
+            pattern_bonus = 1.5
+        elif self.wave_pattern == 'double':
+            pattern_bonus = 2.0
+        elif self.wave_pattern == 'accelerating':
+            pattern_bonus = 1.3
+
+        bonus = 100 * (1 + self.combo * 0.5) * pattern_bonus
         self.score += int(bonus)
         self.max_combo = max(self.max_combo, self.combo)
         self.schedule_event('wave_completed', {
             'combo': self.combo,
-            'bonus': bonus
+            'bonus': bonus,
+            'pattern': self.wave_pattern
         })
-        
+
     def fail_wave(self):
         """Wave failed to propagate"""
         self.wave_active = False
+        self.second_wave_active = False
         self.failed_waves += 1
         self.combo = 0
-        self.schedule_event('wave_failed', self.current_wave_sector)
+        self.schedule_event('wave_failed', {
+            'sector': self.current_wave_sector,
+            'pattern': self.wave_pattern
+        })
         
     def boost_sector(self, sector_id: int):
         """Player boosts energy of a sector"""
@@ -261,7 +401,11 @@ class WaveGame:
             'successful_waves': self.successful_waves,
             'failed_waves': self.failed_waves,
             'stadium_level': self.stadium_level,
-            'time_elapsed': self.time_elapsed
+            'time_elapsed': self.time_elapsed,
+            'wave_pattern': self.wave_pattern,
+            'wave_direction': self.wave_direction,
+            'second_wave_active': self.second_wave_active,
+            'second_current_wave_sector': self.second_current_wave_sector
         }
     
     def save_state(self) -> str:
@@ -297,10 +441,10 @@ def update_game(dt: float) -> str:
     return json.dumps(game.get_state())
 
 
-def start_wave_at(sector_id: int) -> str:
+def start_wave_at(sector_id: int, pattern: Optional[str] = None) -> str:
     """Start wave from sector"""
-    success = game.start_wave(sector_id)
-    return json.dumps({'success': success, 'sector': sector_id})
+    success = game.start_wave(sector_id, pattern)
+    return json.dumps({'success': success, 'sector': sector_id, 'pattern': game.wave_pattern})
 
 
 def boost_sector_energy(sector_id: int) -> str:
