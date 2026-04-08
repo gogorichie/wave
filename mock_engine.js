@@ -23,10 +23,9 @@ class MockCrowdSector {
     }
 
     update(dt) {
-        // Validate dt to prevent NaN or Infinity
-        if (!Number.isFinite(dt) || dt < 0 || dt > 1) {
-            console.warn(`Invalid dt value: ${dt}, clamping to safe range`);
-            dt = Math.max(0, Math.min(dt, 0.1));
+        // Validate dt to prevent NaN or negative values
+        if (!Number.isFinite(dt) || dt < 0) {
+            dt = 0.0;
         }
 
         if (this.fatigue > 0) {
@@ -120,9 +119,52 @@ class MockWaveGame {
         this.events = [];
         this.stadium_level = 1;
         this.unlocks = [];
+
+        // Special wave pattern support
+        this.wave_pattern = 'normal';  // normal, reverse, double, accelerating
+        this.wave_direction = 1;  // 1 for clockwise, -1 for counter-clockwise
+        this.base_wave_speed = 0.3;
+        this.speed_increment = 0.0;  // for accelerating pattern
+        this.sectors_traveled = 0;
+
+        // Double wave support
+        this.second_wave_active = false;
+        this.second_wave_start_sector = -1;
+        this.second_current_wave_sector = -1;
+        this.second_wave_timer = 0.0;
     }
 
-    start_wave(sector_id) {
+    selectWavePattern() {
+        // Randomly select a wave pattern
+        const patterns = ['normal', 'reverse', 'double', 'accelerating'];
+        const rand = Math.random();
+
+        if (rand < 0.4) {
+            this.wave_pattern = 'normal';
+        } else if (rand < 0.6) {
+            this.wave_pattern = 'reverse';
+        } else if (rand < 0.8) {
+            this.wave_pattern = 'double';
+        } else {
+            this.wave_pattern = 'accelerating';
+        }
+
+        if (this.wave_pattern === 'reverse') {
+            this.wave_direction = -1;
+        } else if (this.wave_pattern === 'double') {
+            this.wave_direction = 1;
+        } else if (this.wave_pattern === 'accelerating') {
+            this.wave_direction = 1;
+            this.speed_increment = -0.015;  // Get faster over time
+        } else {  // normal
+            this.wave_direction = 1;
+        }
+
+        this.sectors_traveled = 0;
+        this.wave_speed = this.base_wave_speed;
+    }
+
+    start_wave(sector_id, pattern = null) {
         if (this.wave_active) {
             return false;
         }
@@ -133,23 +175,60 @@ class MockWaveGame {
             return false;
         }
 
+
         const sector = this.sectors[sector_id];
         if (sector.start_wave()) {
+            // Select pattern (use provided or random)
+            if (pattern) {
+                this.wave_pattern = pattern;
+                // Set direction and speed based on pattern
+                if (this.wave_pattern === 'reverse') {
+                    this.wave_direction = -1;
+                } else if (this.wave_pattern === 'double') {
+                    this.wave_direction = 1;
+                } else if (this.wave_pattern === 'accelerating') {
+                    this.wave_direction = 1;
+                    this.speed_increment = -0.015;
+                } else {  // normal
+                    this.wave_direction = 1;
+                }
+                this.sectors_traveled = 0;
+                this.wave_speed = this.base_wave_speed;
+            } else {
+                this.selectWavePattern();
+            }
+
             this.wave_active = true;
             this.wave_start_sector = sector_id;
             this.current_wave_sector = sector_id;
             this.wave_timer = 0.0;
-            this.schedule_event('wave_started', sector_id);
+
+            // For double wave, start second wave on opposite side
+            if (this.wave_pattern === 'double') {
+                const opposite_sector = (sector_id + Math.floor(this.num_sectors / 2)) % this.num_sectors;
+                if (this.sectors[opposite_sector].start_wave()) {
+                    this.second_wave_active = true;
+                    this.second_wave_start_sector = opposite_sector;
+                    this.second_current_wave_sector = opposite_sector;
+                    this.second_wave_timer = 0.0;
+                }
+            }
+
+            this.schedule_event('wave_started', {
+                sector: sector_id,
+                pattern: this.wave_pattern,
+                direction: this.wave_direction === 1 ? 'clockwise' : 'counter-clockwise'
+            });
             return true;
         }
         return false;
     }
 
     update(dt) {
-        // Validate dt to prevent NaN or Infinity
-        if (!Number.isFinite(dt) || dt < 0 || dt > 1) {
-            console.warn(`Invalid dt value in game update: ${dt}, clamping to safe range`);
-            dt = Math.max(0, Math.min(dt, 0.1));
+        // Validate dt to prevent NaN or negative values
+        if (!Number.isFinite(dt) || dt < 0) {
+            console.warn(`Invalid dt value in game update: ${dt}, resetting to 0`);
+            dt = 0.0;
         }
 
         this.time_elapsed += dt;
@@ -158,54 +237,129 @@ class MockWaveGame {
             sector.update(dt);
         }
 
+        // Handle wave propagation for first wave
         if (this.wave_active) {
-            this.wave_timer += dt;
+            this._updateWave(dt, false);
+        }
 
-            const current = this.sectors[this.current_wave_sector];
-            if (current.state === MockSectorState.ANTICIPATING) {
-                if (this.wave_timer > 0.2) {
-                    if (current.stand_up()) {
-                        this.combo += 1;
-                        this.score += 10 * this.combo;
-                    }
+        // Handle second wave for double pattern
+        if (this.second_wave_active) {
+            this._updateWave(dt, true);
+        }
+    }
+
+    _updateWave(dt, isSecondWave = false) {
+        // Get appropriate wave state
+        let waveTimer = isSecondWave ? this.second_wave_timer : this.wave_timer;
+        let currentSector = isSecondWave ? this.second_current_wave_sector : this.current_wave_sector;
+        let startSector = isSecondWave ? this.second_wave_start_sector : this.wave_start_sector;
+
+        waveTimer += dt;
+
+        // Check if anticipating sector should stand
+        const current = this.sectors[currentSector];
+        if (current.state === MockSectorState.ANTICIPATING) {
+            if (waveTimer > 0.2) {
+                if (current.stand_up()) {
+                    this.combo += 1;
+                    this.score += 10 * this.combo;
                 }
             }
+        }
 
-            if (this.wave_timer >= this.wave_speed) {
-                const next_sector_id = (this.current_wave_sector + 1) % this.num_sectors;
-                const next_sector = this.sectors[next_sector_id];
+        // Propagate wave to next sector
+        if (waveTimer >= this.wave_speed) {
+            // For accelerating pattern, increase speed
+            if (this.wave_pattern === 'accelerating' && !isSecondWave) {
+                this.wave_speed = Math.max(0.1, this.wave_speed + this.speed_increment);
+                this.sectors_traveled += 1;
+            }
 
-                if (next_sector_id === this.wave_start_sector) {
-                    this.complete_wave();
+            // Calculate next sector based on direction
+            let next_sector_id = (currentSector + this.wave_direction + this.num_sectors) % this.num_sectors;
+            const next_sector = this.sectors[next_sector_id];
+
+            // Check if wave completed full circle
+            if (next_sector_id === startSector) {
+                if (isSecondWave) {
+                    this.second_wave_active = false;
+                    // Check if both waves completed
+                    if (!this.wave_active) {
+                        this.complete_wave();
+                    }
+
                 } else {
-                    if (next_sector.start_wave()) {
+                    // For double wave, wait for second wave to complete
+                    this.wave_active = false;
+                    if (!this.second_wave_active || this.wave_pattern !== 'double') {
+                        this.complete_wave();
+                    }
+                }
+            } else {
+                // Propagate to next sector
+                if (next_sector.start_wave()) {
+                    if (isSecondWave) {
+                        this.second_current_wave_sector = next_sector_id;
+                        this.second_wave_timer = 0.0;
+                    } else {
                         this.current_wave_sector = next_sector_id;
                         this.wave_timer = 0.0;
-                    } else {
-                        this.fail_wave();
                     }
+                } else {
+                    // Wave failed
+                    if (isSecondWave) {
+                        this.second_wave_active = false;
+                    } else {
+                        this.wave_active = false;
+                        this.second_wave_active = false;  // Both waves fail
+                    }
+                    this.fail_wave();
                 }
             }
+        }
+
+        // Update timer
+        if (isSecondWave) {
+            this.second_wave_timer = waveTimer;
+        } else {
+            this.wave_timer = waveTimer;
         }
     }
 
     complete_wave() {
         this.wave_active = false;
+        this.second_wave_active = false;
         this.successful_waves += 1;
-        const bonus = 100 * (1 + this.combo * 0.5);
+
+        // Bonus multiplier for special patterns
+        let pattern_bonus = 1.0;
+        if (this.wave_pattern === 'reverse') {
+            pattern_bonus = 1.5;
+        } else if (this.wave_pattern === 'double') {
+            pattern_bonus = 2.0;
+        } else if (this.wave_pattern === 'accelerating') {
+            pattern_bonus = 1.3;
+        }
+
+        const bonus = 100 * (1 + this.combo * 0.5) * pattern_bonus;
         this.score += Math.floor(bonus);
         this.max_combo = Math.max(this.max_combo, this.combo);
         this.schedule_event('wave_completed', {
             combo: this.combo,
-            bonus: bonus
+            bonus: bonus,
+            pattern: this.wave_pattern
         });
     }
 
     fail_wave() {
         this.wave_active = false;
+        this.second_wave_active = false;
         this.failed_waves += 1;
         this.combo = 0;
-        this.schedule_event('wave_failed', this.current_wave_sector);
+        this.schedule_event('wave_failed', {
+            sector: this.current_wave_sector,
+            pattern: this.wave_pattern
+        });
     }
 
     boost_sector(sector_id) {
@@ -266,7 +420,11 @@ class MockWaveGame {
             successful_waves: this.successful_waves,
             failed_waves: this.failed_waves,
             stadium_level: this.stadium_level,
-            time_elapsed: this.time_elapsed
+            time_elapsed: this.time_elapsed,
+            wave_pattern: this.wave_pattern,
+            wave_direction: this.wave_direction,
+            second_wave_active: this.second_wave_active,
+            second_current_wave_sector: this.second_current_wave_sector
         };
     }
 
@@ -300,9 +458,9 @@ export const mockGameAPI = {
         return JSON.stringify(this.game.get_state());
     },
     
-    start_wave_at(sector_id) {
-        const success = this.game.start_wave(sector_id);
-        return JSON.stringify({ success, sector: sector_id });
+    start_wave_at(sector_id, pattern = null) {
+        const success = this.game.start_wave(sector_id, pattern);
+        return JSON.stringify({ success, sector: sector_id, pattern: this.game.wave_pattern });
     },
     
     boost_sector_energy(sector_id) {

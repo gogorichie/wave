@@ -563,9 +563,16 @@ function handleGameEvent(event) {
         case 'wave_started':
             console.log('Wave started at sector', event.data);
             waveAttempts++;
+            // Show pattern notification
+            if (event.data && event.data.pattern) {
+                const patternName = formatPatternName(event.data.pattern);
+                const direction = event.data.direction || 'clockwise';
+                showNotification(`${patternName} wave started (${direction})!`, 'info');
+            }
             break;
         case 'wave_completed':
-            showNotification(`Wave Complete! +${Math.floor(event.data.bonus)} points`, 'success');
+            const patternBonus = event.data.pattern ? ` (${formatPatternName(event.data.pattern)})` : '';
+            showNotification(`Wave Complete${patternBonus}! +${Math.floor(event.data.bonus)} points`, 'success');
             playSound('success');
             successfulWaves++;
             currentStreak++;
@@ -589,6 +596,19 @@ function handleGameEvent(event) {
             addEventIndicator('scoreboard', event.data || {});
             playSound('powerup');
             break;
+    }
+}
+
+/**
+ * Format pattern name for display
+ */
+function formatPatternName(pattern) {
+    switch (pattern) {
+        case 'normal': return 'Normal';
+        case 'reverse': return 'Reverse';
+        case 'double': return 'Double';
+        case 'accelerating': return 'Accelerating';
+        default: return pattern;
     }
 }
 
@@ -1132,21 +1152,31 @@ function drawEnergyIndicator(sector, geom) {
 function drawSector(sector, index, totalSectors) {
     const geom = getSectorGeometry(index, totalSectors);
     const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
-    
+
     // Check if this sector is hovered
     const isHovered = index === hoveredSector;
-    
+
+    // Check if this sector is part of the second wave (for double pattern)
+    const isSecondWave = gameState.second_wave_active &&
+                         index === gameState.second_current_wave_sector;
+
     // Use precomputed path if available
     if (geom.path) {
         ctx.fillStyle = getSectorColor(sector);
         ctx.fill(geom.path);
-        
+
         // Hover highlight
         if (isHovered && isGameRunning && !isPaused) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
             ctx.fill(geom.path);
         }
-        
+
+        // Second wave highlight (for double pattern)
+        if (isSecondWave) {
+            ctx.fillStyle = 'rgba(255, 100, 255, 0.3)';
+            ctx.fill(geom.path);
+        }
+
         // Border
         ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
@@ -1156,21 +1186,27 @@ function drawSector(sector, index, totalSectors) {
         const angleWidth = (Math.PI * 2) / totalSectors;
         const startAngle = geom.angle - angleWidth / 2;
         const endAngle = geom.angle + angleWidth / 2;
-        
+
         ctx.beginPath();
         ctx.arc(geom.centerX, geom.centerY, geom.outerRadius, startAngle, endAngle);
         ctx.arc(geom.centerX, geom.centerY, geom.innerRadius, endAngle, startAngle, true);
         ctx.closePath();
-        
+
         ctx.fillStyle = getSectorColor(sector);
         ctx.fill();
-        
+
         // Hover highlight
         if (isHovered && isGameRunning && !isPaused) {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
             ctx.fill();
         }
-        
+
+        // Second wave highlight (for double pattern)
+        if (isSecondWave) {
+            ctx.fillStyle = 'rgba(255, 100, 255, 0.3)';
+            ctx.fill();
+        }
+
         ctx.strokeStyle = isHovered ? theme.hoverBorder : theme.border;
         ctx.lineWidth = isHovered ? 3 : 2;
         ctx.stroke();
