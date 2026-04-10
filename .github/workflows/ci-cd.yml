@@ -83,11 +83,29 @@ jobs:
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
 
       - name: Semantic Release
+        id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release
+        run: |
+          # Record the latest local tag before semantic-release runs
+          BEFORE_TAG=$(git tag --sort=-version:refname | head -n 1)
+
+          npx semantic-release
+
+          # Pull any tags pushed by semantic-release
+          git fetch --tags --quiet
+
+          AFTER_TAG=$(git tag --sort=-version:refname | head -n 1)
+
+          if [ -n "$AFTER_TAG" ] && [ "$AFTER_TAG" != "$BEFORE_TAG" ]; then
+            echo "new_release_published=true"  >> "$GITHUB_OUTPUT"
+            echo "new_release_version=${AFTER_TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+            echo "new_release_version="        >> "$GITHUB_OUTPUT"
+          fi
 
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
