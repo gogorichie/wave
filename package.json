@@ -17,6 +17,7 @@
     "pyodide",
     "canvas"
   ],
+  "private": true,
   "author": "",
   "license": "MIT",
   "engines": {
