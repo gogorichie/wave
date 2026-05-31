@@ -1,6 +1,7 @@
 {
   "name": "stadium-wave-game",
   "version": "1.0.0",
+  "private": true,
   "description": "Browser-based stadium wave game with Python logic",
   "main": "index.html",
   "scripts": {
