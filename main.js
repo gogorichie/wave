@@ -77,8 +77,8 @@ const SOUND_PROFILES = {
 // Canvas settings
 const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
-const SOCCER_FIELD_ASPECT = 68 / 105; // width / length
-const FOOTBALL_FIELD_ASPECT = 53.3 / 120; // width / length
+const SOCCER_FIELD_ASPECT = 105 / 68; // landscape: long (105m) side is width
+const FOOTBALL_FIELD_ASPECT = 120 / 53.3; // landscape: long (120 yd) side is width
 
 // Stadium color themes
 const STADIUM_THEMES = {
@@ -121,8 +121,6 @@ const BASEBALL_FIELD_COLORS = {
 // Baseball field layout constants
 const BASEBALL_COS_45 = Math.sqrt(2) / 2;  // ~0.707, for 45-degree angle calculations
 const BASEBALL_MOUND_DISTANCE_RATIO = 0.9;  // Pitcher's mound is 90% of base distance from home
-const BASEBALL_FOUL_LINE_EXTENT_H = 0.9;  // Horizontal extent of foul lines
-const BASEBALL_FOUL_LINE_EXTENT_V = 0.6;  // Vertical extent of foul lines
 
 // Performance optimization
 let sectorPaths = [];
@@ -935,20 +933,29 @@ function removeAllEventListeners() {
 function setupHighDPICanvas(canvas, ctx, container) {
     // Use effective pixel ratio based on performance tier
     const devicePixelRatio = effectivePixelRatio;
-    const rect = container.getBoundingClientRect();
-    
+
+    // Clear any previously hard-coded inline size so CSS flex can compute
+    // the correct height (which excludes the controls bar when it is visible).
+    canvas.style.width = '';
+    canvas.style.height = '';
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const width = canvasRect.width || containerRect.width;
+    const height = canvasRect.height || containerRect.height;
+
     // Set display size (CSS pixels)
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-    
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+
     // Set actual size (device pixels) - limited by performance tier
-    canvas.width = rect.width * devicePixelRatio;
-    canvas.height = rect.height * devicePixelRatio;
-    
+    canvas.width = width * devicePixelRatio;
+    canvas.height = height * devicePixelRatio;
+
     // Scale context to ensure correct drawing operations
     ctx.scale(devicePixelRatio, devicePixelRatio);
-    
-    return { width: rect.width, height: rect.height };
+
+    return { width, height };
 }
 
 /**
@@ -1301,38 +1308,72 @@ function drawSoccerField(centerX, centerY, fieldRect) {
     ctx.rect(fieldRect.left, fieldRect.top, fieldRect.width, fieldRect.height);
     ctx.clip();
 
+    // fieldRect is landscape: width = 105m direction, height = 68m direction
+    const W = fieldRect.width;
+    const H = fieldRect.height;
+    const fieldLeft = fieldRect.left;
+    const fieldRight = fieldRect.left + W;
+    const fieldTop = fieldRect.top;
+    const fieldBottom = fieldRect.top + H;
+
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.lineWidth = 2;
 
-    const halfWidth = fieldRect.width / 2;
-    const halfHeight = fieldRect.height / 2;
-    const circleRadius = Math.min(halfWidth, halfHeight) * 0.3;
-    const fieldTop = fieldRect.top;
-    const fieldBottom = fieldRect.top + fieldRect.height;
-
-    // Center circle
+    // Center circle (9.15 m radius; scale by field height = 68m side)
+    const circleRadius = H * (9.15 / 68);
     ctx.beginPath();
     ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Center line
+    // Halfway line (vertical, divides the 105m length in half)
     ctx.beginPath();
     ctx.moveTo(centerX, fieldTop);
     ctx.lineTo(centerX, fieldBottom);
     ctx.stroke();
 
-    // Penalty boxes (skip for low performance)
-    if (performanceTier !== 'low') {
-        const boxWidth = fieldRect.width * 0.35;
-        const boxHeight = fieldRect.height * 0.09;
-        ctx.strokeRect(centerX - boxWidth / 2, fieldTop, boxWidth, boxHeight);
-        ctx.strokeRect(centerX - boxWidth / 2, fieldBottom - boxHeight, boxWidth, boxHeight);
+    // Center spot
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 3, 0, Math.PI * 2);
+    ctx.fill();
 
-        // Goal boxes
-        const goalBoxWidth = fieldRect.width * 0.175;
-        const goalBoxHeight = fieldRect.height * 0.04;
-        ctx.strokeRect(centerX - goalBoxWidth / 2, fieldTop, goalBoxWidth, goalBoxHeight);
-        ctx.strokeRect(centerX - goalBoxWidth / 2, fieldBottom - goalBoxHeight, goalBoxWidth, goalBoxHeight);
+    if (performanceTier !== 'low') {
+        // Penalty areas: 16.5m deep × 40.32m wide, on left and right short ends
+        const penDepth = W * (16.5 / 105);
+        const penHeight = H * (40.32 / 68);
+        ctx.strokeRect(fieldLeft, centerY - penHeight / 2, penDepth, penHeight);
+        ctx.strokeRect(fieldRight - penDepth, centerY - penHeight / 2, penDepth, penHeight);
+
+        // Goal areas: 5.5m deep × 18.32m wide
+        const goalDepth = W * (5.5 / 105);
+        const goalHeight = H * (18.32 / 68);
+        ctx.strokeRect(fieldLeft, centerY - goalHeight / 2, goalDepth, goalHeight);
+        ctx.strokeRect(fieldRight - goalDepth, centerY - goalHeight / 2, goalDepth, goalHeight);
+
+        // Penalty spots (11m from each goal line)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.beginPath();
+        ctx.arc(fieldLeft + W * (11 / 105), centerY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(fieldRight - W * (11 / 105), centerY, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Corner arcs (1m radius at all four corners)
+        const cornerR = Math.max(W * (1 / 105), 4);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.beginPath();
+        ctx.arc(fieldLeft, fieldTop, cornerR, 0, Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(fieldRight, fieldTop, cornerR, Math.PI / 2, Math.PI);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(fieldRight, fieldBottom, cornerR, Math.PI, 3 * Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(fieldLeft, fieldBottom, cornerR, 3 * Math.PI / 2, 2 * Math.PI);
+        ctx.stroke();
     }
 
     ctx.restore();
@@ -1408,22 +1449,18 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
     ctx.strokeStyle = BASEBALL_FIELD_COLORS.foulLine;
     ctx.lineWidth = 3;
     
+    // Foul lines extend at true 45° from home plate — upper-left (3rd) and upper-right (1st)
+    const foulLineLength = fieldRadius * 1.5;
     // Left foul line (3rd base line)
     ctx.beginPath();
     ctx.moveTo(homePlateX, homePlateY);
-    // Extend through 3rd base to edge
-    const leftFoulExtendX = homePlateX - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_H;
-    const leftFoulExtendY = centerY - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_V;
-    ctx.lineTo(leftFoulExtendX, leftFoulExtendY);
+    ctx.lineTo(homePlateX - foulLineLength * BASEBALL_COS_45, homePlateY - foulLineLength * BASEBALL_COS_45);
     ctx.stroke();
-    
+
     // Right foul line (1st base line)
     ctx.beginPath();
     ctx.moveTo(homePlateX, homePlateY);
-    // Extend through 1st base to edge
-    const rightFoulExtendX = homePlateX + fieldRadius * BASEBALL_FOUL_LINE_EXTENT_H;
-    const rightFoulExtendY = centerY - fieldRadius * BASEBALL_FOUL_LINE_EXTENT_V;
-    ctx.lineTo(rightFoulExtendX, rightFoulExtendY);
+    ctx.lineTo(homePlateX + foulLineLength * BASEBALL_COS_45, homePlateY - foulLineLength * BASEBALL_COS_45);
     ctx.stroke();
     
     // Draw base paths (connecting the bases)
@@ -1491,55 +1528,82 @@ function drawBaseballField(centerX, centerY, fieldRadius) {
 function drawFootballField(centerX, centerY, fieldRect) {
     drawRectGrassBase(fieldRect);
 
-    const fieldWidth = fieldRect.width;
-    const fieldHeight = fieldRect.height;
-    const top = fieldRect.top;
+    // fieldRect is landscape: width = 120 yd direction, height = 53.3 yd direction
+    const W = fieldRect.width;
+    const H = fieldRect.height;
     const left = fieldRect.left;
+    const top = fieldRect.top;
+    const right = left + W;
+    const bottom = top + H;
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(left, top, fieldWidth, fieldHeight);
+    ctx.rect(left, top, W, H);
     ctx.clip();
 
-    // Alternating stripes (simplified for low performance)
+    // End zones (10 yards each out of 120 total) — distinct dark green
+    const endZoneW = W * (10 / 120);
+    ctx.fillStyle = 'rgba(0, 80, 0, 0.95)';
+    ctx.fillRect(left, top, endZoneW, H);
+    ctx.fillRect(right - endZoneW, top, endZoneW, H);
+
+    // Alternating vertical stripes across the 100-yard play field
+    const playLeft = left + endZoneW;
+    const playW = W - 2 * endZoneW;
     const stripeCount = performanceTier === 'low' ? 5 : 10;
-    const stripeWidth = fieldWidth / stripeCount;
+    const stripeW = playW / stripeCount;
     for (let i = 0; i < stripeCount; i++) {
         ctx.fillStyle = i % 2 === 0 ? 'rgba(26, 96, 38, 0.85)' : 'rgba(35, 128, 50, 0.85)';
-        ctx.fillRect(left + i * stripeWidth, top, stripeWidth, fieldHeight);
+        ctx.fillRect(playLeft + i * stripeW, top, stripeW, H);
     }
 
-    // End zones
-    const endZoneHeight = fieldHeight * 0.12;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.fillRect(left, top, fieldWidth, endZoneHeight);
-    ctx.fillRect(left, top + fieldHeight - endZoneHeight, fieldWidth, endZoneHeight);
-
-    // Yard lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    // End zone boundary lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.lineWidth = 2;
-    const yardLineCount = 11;
-    for (let i = 0; i <= yardLineCount; i++) {
-        const y = top + (i / yardLineCount) * fieldHeight;
+    ctx.beginPath(); ctx.moveTo(left + endZoneW, top); ctx.lineTo(left + endZoneW, bottom); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(right - endZoneW, top); ctx.lineTo(right - endZoneW, bottom); ctx.stroke();
+
+    // Yard lines every 10 yards (11 vertical lines across the play field)
+    for (let i = 0; i <= 10; i++) {
+        const x = playLeft + (i / 10) * playW;
+        ctx.lineWidth = i === 5 ? 3 : 2; // emphasize the 50-yard line
         ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(left + fieldWidth, y);
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
         ctx.stroke();
     }
 
-    // Hash marks (skip for low performance)
+    // Hash marks and end zone text (skip for low performance)
     if (performanceTier !== 'low') {
-        const hashMarkSpacing = fieldWidth / 14;
-        for (let i = 1; i < 14; i++) {
-            const x = left + i * hashMarkSpacing;
-            for (let j = 1; j < yardLineCount; j++) {
-                const y = top + (j / yardLineCount) * fieldHeight;
-                ctx.beginPath();
-                ctx.moveTo(x, y - 4);
-                ctx.lineTo(x, y + 4);
-                ctx.stroke();
-            }
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        const hashLen = H * 0.07;
+        const hashTop = top + H * 0.25;
+        const hashBottom = top + H * 0.75;
+        // Hash marks every 5 yards (21 positions)
+        for (let i = 0; i <= 20; i++) {
+            const x = playLeft + (i / 20) * playW;
+            ctx.beginPath(); ctx.moveTo(x, hashTop - hashLen / 2); ctx.lineTo(x, hashTop + hashLen / 2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x, hashBottom - hashLen / 2); ctx.lineTo(x, hashBottom + hashLen / 2); ctx.stroke();
         }
+
+        // "END ZONE" text rotated in each end zone
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.font = `bold ${Math.max(H * 0.12, 8)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.save();
+        ctx.translate(left + endZoneW / 2, centerY);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText('END ZONE', 0, 0);
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(right - endZoneW / 2, centerY);
+        ctx.rotate(Math.PI / 2);
+        ctx.fillText('END ZONE', 0, 0);
+        ctx.restore();
     }
 
     ctx.restore();
