@@ -8,6 +8,20 @@ from typing import List, Dict, Optional
 import json
 
 
+VENUE_MODIFIERS: Dict[str, Dict] = {
+    'soccer':   {'energy_rate': 1.00, 'fatigue_rate': 1.00, 'readiness_threshold': 0.30},
+    'baseball': {'energy_rate': 0.95, 'fatigue_rate': 1.05, 'readiness_threshold': 0.32},
+    'cricket':  {'energy_rate': 0.90, 'fatigue_rate': 1.10, 'readiness_threshold': 0.35},
+}
+
+WEATHER_MODIFIERS: Dict[str, Dict] = {
+    'sunny':  {'energy_rate': 1.00, 'fatigue_rate': 1.00},
+    'cloudy': {'energy_rate': 0.95, 'fatigue_rate': 1.00},
+    'rainy':  {'energy_rate': 0.70, 'fatigue_rate': 1.20},
+    'snowy':  {'energy_rate': 0.50, 'fatigue_rate': 1.30},
+}
+
+
 class SectorState(Enum):
     """States for individual crowd sectors"""
     IDLE = "idle"
@@ -28,6 +42,10 @@ class CrowdSector:
         self.enthusiasm = random.uniform(0.6, 0.9)
         self.distractions = 0.0
         self.timer = 0
+        # Modifier attributes set by WaveGame based on venue and weather
+        self._energy_rate_mult = 1.0
+        self._fatigue_rate_mult = 1.0
+        self._readiness_threshold = 0.30
         
     def update(self, dt: float):
         """Update sector state over time"""
@@ -35,13 +53,13 @@ class CrowdSector:
         if not isinstance(dt, (int, float)) or dt < 0:
             dt = 0.0
 
-        # Recover energy slowly
+        # Recover energy slowly (rate scaled by venue/weather modifiers)
         if self.fatigue > 0:
-            self.fatigue = max(0, self.fatigue - dt * 0.05)
+            self.fatigue = max(0, self.fatigue - dt * 0.05 * self._fatigue_rate_mult)
 
-        # Energy regeneration
+        # Energy regeneration (rate scaled by venue/weather modifiers)
         if self.energy < 1.0:
-            self.energy = min(1.0, self.energy + dt * 0.1)
+            self.energy = min(1.0, self.energy + dt * 0.1 * self._energy_rate_mult)
 
         # Handle state transitions
         if self.state == SectorState.STANDING:
@@ -58,7 +76,7 @@ class CrowdSector:
     def can_wave(self) -> bool:
         """Check if sector is ready to participate in wave"""
         readiness = (self.energy * self.enthusiasm) - (self.fatigue + self.distractions)
-        return readiness > 0.3 and self.state in [SectorState.IDLE, SectorState.SEATED]
+        return readiness > self._readiness_threshold and self.state in [SectorState.IDLE, SectorState.SEATED]
     
     def start_wave(self):
         """Trigger wave in this sector"""
@@ -107,7 +125,7 @@ class CrowdSector:
 class WaveGame:
     """Main game state manager"""
 
-    def __init__(self, num_sectors: int = 16):
+    def __init__(self, num_sectors: int = 16, venue: str = 'soccer', weather: str = 'sunny'):
         self.num_sectors = num_sectors
         self.sectors: List[CrowdSector] = [
             CrowdSector(i, size=random.randint(80, 120))
@@ -122,7 +140,7 @@ class WaveGame:
         self.time_elapsed = 0.0
         self.successful_waves = 0
         self.failed_waves = 0
-        self.wave_speed = 0.3  # seconds between sectors
+        self.wave_speed = 0.6  # seconds between sectors
         self.wave_timer = 0.0
         self.events = []
         self.stadium_level = 1
@@ -131,7 +149,7 @@ class WaveGame:
         # Special wave pattern support
         self.wave_pattern = 'normal'  # normal, reverse, double, accelerating
         self.wave_direction = 1  # 1 for clockwise, -1 for counter-clockwise
-        self.base_wave_speed = 0.3
+        self.base_wave_speed = 0.6
         self.speed_increment = 0.0  # for accelerating pattern
         self.sectors_traveled = 0
 
@@ -140,6 +158,31 @@ class WaveGame:
         self.second_wave_start_sector = -1
         self.second_current_wave_sector = -1
         self.second_wave_timer = 0.0
+
+        # Venue and weather
+        self.venue = venue
+        self.weather = weather
+        self._apply_modifiers()
+
+    def _apply_modifiers(self):
+        """Apply combined venue + weather modifiers to all sectors."""
+        vm = VENUE_MODIFIERS.get(self.venue, VENUE_MODIFIERS['soccer'])
+        wm = WEATHER_MODIFIERS.get(self.weather, WEATHER_MODIFIERS['sunny'])
+        energy_rate = vm['energy_rate'] * wm['energy_rate']
+        fatigue_rate = vm['fatigue_rate'] * wm['fatigue_rate']
+        threshold = vm['readiness_threshold']
+        for sector in self.sectors:
+            sector._energy_rate_mult = energy_rate
+            sector._fatigue_rate_mult = fatigue_rate
+            sector._readiness_threshold = threshold
+
+    def set_venue(self, venue: str):
+        self.venue = venue
+        self._apply_modifiers()
+
+    def set_weather(self, weather: str):
+        self.weather = weather
+        self._apply_modifiers()
         
     def select_wave_pattern(self):
         """Randomly select a wave pattern"""
@@ -153,7 +196,7 @@ class WaveGame:
             self.wave_direction = 1
         elif self.wave_pattern == 'accelerating':
             self.wave_direction = 1
-            self.speed_increment = -0.015  # Get faster over time
+            self.speed_increment = -0.025  # Get faster over time
         else:  # normal
             self.wave_direction = 1
 
@@ -182,7 +225,7 @@ class WaveGame:
                     self.wave_direction = 1
                 elif self.wave_pattern == 'accelerating':
                     self.wave_direction = 1
-                    self.speed_increment = -0.015
+                    self.speed_increment = -0.025
                 else:  # normal
                     self.wave_direction = 1
                 self.sectors_traveled = 0
@@ -405,7 +448,9 @@ class WaveGame:
             'wave_pattern': self.wave_pattern,
             'wave_direction': self.wave_direction,
             'second_wave_active': self.second_wave_active,
-            'second_current_wave_sector': self.second_current_wave_sector
+            'second_current_wave_sector': self.second_current_wave_sector,
+            'venue': self.venue,
+            'weather': self.weather,
         }
     
     def save_state(self) -> str:
@@ -428,10 +473,10 @@ class WaveGame:
 game = WaveGame()
 
 
-def init_game(num_sectors: int = 16) -> str:
+def init_game(num_sectors: int = 16, venue: str = 'soccer', weather: str = 'sunny') -> str:
     """Initialize new game"""
     global game
-    game = WaveGame(num_sectors)
+    game = WaveGame(num_sectors, venue=venue, weather=weather)
     return json.dumps({'status': 'initialized', 'sectors': num_sectors})
 
 
@@ -481,3 +526,15 @@ def load_game(save_data: str) -> str:
         return json.dumps({'status': 'loaded'})
     except Exception as e:
         return json.dumps({'status': 'error', 'message': str(e)})
+
+
+def set_venue(venue: str) -> str:
+    """Update venue and reapply difficulty modifiers"""
+    game.set_venue(venue)
+    return json.dumps({'status': 'ok', 'venue': venue})
+
+
+def set_weather(weather: str) -> str:
+    """Update weather and reapply crowd behaviour modifiers"""
+    game.set_weather(weather)
+    return json.dumps({'status': 'ok', 'weather': weather})

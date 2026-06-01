@@ -3,6 +3,19 @@
  * Provides the same API as the Python engine but runs in pure JavaScript
  */
 
+const VENUE_MODIFIERS = {
+    soccer:   { energy_rate: 1.00, fatigue_rate: 1.00, readiness_threshold: 0.30 },
+    baseball: { energy_rate: 0.95, fatigue_rate: 1.05, readiness_threshold: 0.32 },
+    cricket:  { energy_rate: 0.90, fatigue_rate: 1.10, readiness_threshold: 0.35 },
+};
+
+const WEATHER_MODIFIERS = {
+    sunny:  { energy_rate: 1.00, fatigue_rate: 1.00 },
+    cloudy: { energy_rate: 0.95, fatigue_rate: 1.00 },
+    rainy:  { energy_rate: 0.70, fatigue_rate: 1.20 },
+    snowy:  { energy_rate: 0.50, fatigue_rate: 1.30 },
+};
+
 class MockSectorState {
     static IDLE = "idle";
     static ANTICIPATING = "anticipating";
@@ -20,6 +33,9 @@ class MockCrowdSector {
         this.enthusiasm = Math.random() * 0.3 + 0.6;
         this.distractions = 0.0;
         this.timer = 0;
+        this._energy_rate_mult = 1.0;
+        this._fatigue_rate_mult = 1.0;
+        this._readiness_threshold = 0.30;
     }
 
     update(dt) {
@@ -29,11 +45,11 @@ class MockCrowdSector {
         }
 
         if (this.fatigue > 0) {
-            this.fatigue = Math.max(0, this.fatigue - dt * 0.05);
+            this.fatigue = Math.max(0, this.fatigue - dt * 0.05 * this._fatigue_rate_mult);
         }
 
         if (this.energy < 1.0) {
-            this.energy = Math.min(1.0, this.energy + dt * 0.1);
+            this.energy = Math.min(1.0, this.energy + dt * 0.1 * this._energy_rate_mult);
         }
 
         if (this.state === MockSectorState.STANDING) {
@@ -52,7 +68,7 @@ class MockCrowdSector {
 
     can_wave() {
         const readiness = (this.energy * this.enthusiasm) - (this.fatigue + this.distractions);
-        return readiness > 0.3 && 
+        return readiness > this._readiness_threshold &&
                (this.state === MockSectorState.IDLE || this.state === MockSectorState.SEATED);
     }
 
@@ -99,7 +115,7 @@ class MockCrowdSector {
 }
 
 class MockWaveGame {
-    constructor(num_sectors = 16) {
+    constructor(num_sectors = 16, venue = 'soccer', weather = 'sunny') {
         this.num_sectors = num_sectors;
         this.sectors = [];
         for (let i = 0; i < num_sectors; i++) {
@@ -114,7 +130,7 @@ class MockWaveGame {
         this.time_elapsed = 0.0;
         this.successful_waves = 0;
         this.failed_waves = 0;
-        this.wave_speed = 0.3;
+        this.wave_speed = 0.6;
         this.wave_timer = 0.0;
         this.events = [];
         this.stadium_level = 1;
@@ -123,7 +139,7 @@ class MockWaveGame {
         // Special wave pattern support
         this.wave_pattern = 'normal';  // normal, reverse, double, accelerating
         this.wave_direction = 1;  // 1 for clockwise, -1 for counter-clockwise
-        this.base_wave_speed = 0.3;
+        this.base_wave_speed = 0.6;
         this.speed_increment = 0.0;  // for accelerating pattern
         this.sectors_traveled = 0;
 
@@ -132,6 +148,34 @@ class MockWaveGame {
         this.second_wave_start_sector = -1;
         this.second_current_wave_sector = -1;
         this.second_wave_timer = 0.0;
+
+        // Venue and weather
+        this.venue = venue;
+        this.weather = weather;
+        this._applyModifiers();
+    }
+
+    _applyModifiers() {
+        const vm = VENUE_MODIFIERS[this.venue] || VENUE_MODIFIERS.soccer;
+        const wm = WEATHER_MODIFIERS[this.weather] || WEATHER_MODIFIERS.sunny;
+        const energyRate = vm.energy_rate * wm.energy_rate;
+        const fatigueRate = vm.fatigue_rate * wm.fatigue_rate;
+        const threshold = vm.readiness_threshold;
+        for (const sector of this.sectors) {
+            sector._energy_rate_mult = energyRate;
+            sector._fatigue_rate_mult = fatigueRate;
+            sector._readiness_threshold = threshold;
+        }
+    }
+
+    set_venue(venue) {
+        this.venue = venue;
+        this._applyModifiers();
+    }
+
+    set_weather(weather) {
+        this.weather = weather;
+        this._applyModifiers();
     }
 
     selectWavePattern() {
@@ -155,7 +199,7 @@ class MockWaveGame {
             this.wave_direction = 1;
         } else if (this.wave_pattern === 'accelerating') {
             this.wave_direction = 1;
-            this.speed_increment = -0.015;  // Get faster over time
+            this.speed_increment = -0.025;  // Get faster over time
         } else {  // normal
             this.wave_direction = 1;
         }
@@ -424,7 +468,9 @@ class MockWaveGame {
             wave_pattern: this.wave_pattern,
             wave_direction: this.wave_direction,
             second_wave_active: this.second_wave_active,
-            second_current_wave_sector: this.second_current_wave_sector
+            second_current_wave_sector: this.second_current_wave_sector,
+            venue: this.venue,
+            weather: this.weather,
         };
     }
 
@@ -447,9 +493,9 @@ class MockWaveGame {
 // Export mock game API
 export const mockGameAPI = {
     game: null,
-    
-    init_game(num_sectors = 16) {
-        this.game = new MockWaveGame(num_sectors);
+
+    init_game(num_sectors = 16, venue = 'soccer', weather = 'sunny') {
+        this.game = new MockWaveGame(num_sectors, venue, weather);
         return JSON.stringify({ status: 'initialized', sectors: num_sectors });
     },
     
@@ -492,5 +538,15 @@ export const mockGameAPI = {
     trigger_event(event_type, sector_id = null) {
         this.game.trigger_event(event_type, sector_id);
         return JSON.stringify({ status: 'triggered', event: event_type, sector: sector_id });
-    }
+    },
+
+    set_venue(venue) {
+        this.game.set_venue(venue);
+        return JSON.stringify({ status: 'ok', venue });
+    },
+
+    set_weather(weather) {
+        this.game.set_weather(weather);
+        return JSON.stringify({ status: 'ok', weather });
+    },
 };

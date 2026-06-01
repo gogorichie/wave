@@ -29,6 +29,9 @@ let difficulty = 'medium';
 let hoveredSector = -1;
 let fieldType = 'soccer';
 let stadiumType = 'classic';
+let weatherType = 'sunny';
+let timeOfDay = 'day';
+let weatherParticles = [];
 let eventIntervals = [];
 let activeEventIndicators = [];
 let lastAutoSaveTime = 0;
@@ -79,6 +82,7 @@ const STADIUM_RADIUS = 250;
 const SECTOR_HEIGHT = 60;
 const SOCCER_FIELD_ASPECT = 105 / 68; // landscape: long (105m) side is width
 const FOOTBALL_FIELD_ASPECT = 120 / 53.3; // landscape: long (120 yd) side is width
+const MAX_WEATHER_PARTICLES = 150;
 
 // Stadium color themes
 const STADIUM_THEMES = {
@@ -505,9 +509,9 @@ function initGame() {
     try {
         let result;
         if (useMockEngine) {
-            result = mockGameAPI.init_game(16);
+            result = mockGameAPI.init_game(16, fieldType, weatherType);
         } else {
-            result = pyodide.runPython(`init_game(16)`);
+            result = pyodide.runPython(`init_game(16, venue='${fieldType}', weather='${weatherType}')`);
         }
         console.log('Game initialized:', result);
         return true;
@@ -1609,6 +1613,242 @@ function drawFootballField(centerX, centerY, fieldRect) {
     ctx.restore();
 }
 
+function drawCricketField(centerX, centerY, fieldRadius) {
+    ctx.save();
+
+    // Oval outfield — slightly wider than tall
+    const ovalW = fieldRadius * 1.0;
+    const ovalH = fieldRadius * 0.85;
+
+    // Green outfield
+    const grassGrad = getFieldGradient('cricket-base', () => {
+        const g = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, fieldRadius);
+        g.addColorStop(0, '#3a8c3a');
+        g.addColorStop(0.6, '#2e7a2e');
+        g.addColorStop(1, '#1e5c1e');
+        return g;
+    });
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, ovalW, ovalH, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grassGrad;
+    ctx.fill();
+
+    // Boundary rope (oval outline)
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, ovalW, ovalH, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // 30-yard inner circle
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, ovalW * 0.55, ovalH * 0.55, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Center pitch (22 yards ≈ 20% of diameter, narrow strip)
+    const pitchLen = fieldRadius * 0.4;
+    const pitchW = fieldRadius * 0.055;
+    ctx.fillStyle = '#c8a96e'; // pitch — sandy/brown colour
+    ctx.fillRect(centerX - pitchLen / 2, centerY - pitchW / 2, pitchLen, pitchW);
+
+    // Pitch outline
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(centerX - pitchLen / 2, centerY - pitchW / 2, pitchLen, pitchW);
+
+    // Creases — batting crease 4% from each end, full-width across pitch
+    const creaseOffset = pitchLen * 0.18;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 1.5;
+    // Batting crease (left)
+    ctx.beginPath();
+    ctx.moveTo(centerX - pitchLen / 2 + creaseOffset, centerY - pitchW / 2 - 2);
+    ctx.lineTo(centerX - pitchLen / 2 + creaseOffset, centerY + pitchW / 2 + 2);
+    ctx.stroke();
+    // Batting crease (right)
+    ctx.beginPath();
+    ctx.moveTo(centerX + pitchLen / 2 - creaseOffset, centerY - pitchW / 2 - 2);
+    ctx.lineTo(centerX + pitchLen / 2 - creaseOffset, centerY + pitchW / 2 + 2);
+    ctx.stroke();
+
+    // Stumps (3 small dots at each end)
+    const stumpY = [centerY - pitchW * 0.25, centerY, centerY + pitchW * 0.25];
+    const stumpRadius = Math.max(1.5, fieldRadius * 0.008);
+    ctx.fillStyle = '#ffffff';
+    for (const sy of stumpY) {
+        ctx.beginPath();
+        ctx.arc(centerX - pitchLen / 2 + creaseOffset * 0.35, sy, stumpRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(centerX + pitchLen / 2 - creaseOffset * 0.35, sy, stumpRadius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+function drawDayNightOverlay() {
+    if (timeOfDay === 'day') return;
+
+    const devicePixelRatio = effectivePixelRatio;
+    const canvasWidth = canvas.width / devicePixelRatio;
+    const canvasHeight = canvas.height / devicePixelRatio;
+    const centerX = canvasWidth / 2;
+    const centerY = canvasHeight / 2;
+
+    ctx.save();
+
+    if (timeOfDay === 'dusk') {
+        // Warm amber vignette from edges
+        const grad = ctx.createRadialGradient(centerX, centerY, STADIUM_RADIUS * 0.5, centerX, centerY, canvasWidth * 0.75);
+        grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        grad.addColorStop(1, 'rgba(160, 60, 0, 0.38)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    } else if (timeOfDay === 'night') {
+        // Dark navy overlay
+        ctx.fillStyle = 'rgba(5, 10, 40, 0.52)';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Stadium floodlights — four bright cones from just outside the sector ring
+        const floodlightPositions = [
+            { angle: Math.PI * 0.25 },
+            { angle: Math.PI * 0.75 },
+            { angle: Math.PI * 1.25 },
+            { angle: Math.PI * 1.75 },
+        ];
+        const lightRadius = STADIUM_RADIUS + SECTOR_HEIGHT + 10;
+        for (const fp of floodlightPositions) {
+            const lx = centerX + Math.cos(fp.angle) * lightRadius;
+            const ly = centerY + Math.sin(fp.angle) * lightRadius;
+
+            // Cone of light pointing toward center
+            const coneGrad = ctx.createRadialGradient(lx, ly, 0, lx, ly, STADIUM_RADIUS * 1.2);
+            coneGrad.addColorStop(0, 'rgba(255, 250, 200, 0.18)');
+            coneGrad.addColorStop(1, 'rgba(255, 250, 200, 0)');
+            ctx.fillStyle = coneGrad;
+            ctx.beginPath();
+            ctx.arc(lx, ly, STADIUM_RADIUS * 1.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bright lamp dot
+            ctx.beginPath();
+            ctx.arc(lx, ly, 5, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 200, 0.95)';
+            ctx.fill();
+        }
+    }
+
+    ctx.restore();
+}
+
+function drawWeatherOverlay() {
+    if (weatherType === 'sunny') return;
+
+    const devicePixelRatio = effectivePixelRatio;
+    const canvasWidth = canvas.width / devicePixelRatio;
+    const canvasHeight = canvas.height / devicePixelRatio;
+
+    ctx.save();
+
+    if (weatherType === 'cloudy') {
+        const grad = ctx.createRadialGradient(canvasWidth / 2, 0, 0, canvasWidth / 2, canvasHeight / 2, canvasWidth);
+        grad.addColorStop(0, 'rgba(100, 110, 130, 0.22)');
+        grad.addColorStop(1, 'rgba(60, 70, 90, 0.08)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    } else if (weatherType === 'rainy') {
+        // Seed new particles
+        while (weatherParticles.length < MAX_WEATHER_PARTICLES) {
+            weatherParticles.push({
+                x: Math.random() * canvasWidth,
+                y: Math.random() * canvasHeight,
+                len: 8 + Math.random() * 10,
+                speed: 280 + Math.random() * 120,
+                opacity: 0.25 + Math.random() * 0.35,
+            });
+        }
+        // Draw and advance each raindrop
+        ctx.strokeStyle = 'rgba(130, 170, 220, 1)';
+        ctx.lineWidth = 1;
+        for (const p of weatherParticles) {
+            ctx.globalAlpha = p.opacity;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - p.len * 0.25, p.y + p.len);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        // Subtle blue-gray wash
+        ctx.fillStyle = 'rgba(60, 80, 120, 0.12)';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    } else if (weatherType === 'snowy') {
+        while (weatherParticles.length < MAX_WEATHER_PARTICLES) {
+            weatherParticles.push({
+                x: Math.random() * canvasWidth,
+                y: Math.random() * canvasHeight,
+                r: 1.5 + Math.random() * 2.5,
+                speed: 35 + Math.random() * 40,
+                drift: (Math.random() - 0.5) * 20,
+                opacity: 0.5 + Math.random() * 0.4,
+            });
+        }
+        ctx.fillStyle = '#ffffff';
+        for (const p of weatherParticles) {
+            ctx.globalAlpha = p.opacity;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // Subtle cold tint
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.10)';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+
+    ctx.restore();
+}
+
+function tickWeatherParticles(dt) {
+    if (weatherType !== 'rainy' && weatherType !== 'snowy') {
+        weatherParticles = [];
+        return;
+    }
+
+    const devicePixelRatio = effectivePixelRatio;
+    const canvasWidth = canvas.width / devicePixelRatio;
+    const canvasHeight = canvas.height / devicePixelRatio;
+
+    if (weatherType === 'rainy') {
+        for (const p of weatherParticles) {
+            p.y += p.speed * dt;
+            p.x -= p.speed * 0.25 * dt;
+            if (p.y > canvasHeight) {
+                p.y = -p.len;
+                p.x = Math.random() * canvasWidth;
+            }
+            if (p.x < 0) p.x = canvasWidth;
+        }
+    } else if (weatherType === 'snowy') {
+        for (const p of weatherParticles) {
+            p.y += p.speed * dt;
+            p.x += p.drift * dt;
+            if (p.y > canvasHeight) {
+                p.y = -p.r;
+                p.x = Math.random() * canvasWidth;
+            }
+            if (p.x < 0) p.x = canvasWidth;
+            if (p.x > canvasWidth) p.x = 0;
+        }
+    }
+}
+
 function drawField() {
     const devicePixelRatio = effectivePixelRatio;
     const centerX = canvas.width / (2 * devicePixelRatio);
@@ -1625,6 +1865,9 @@ function drawField() {
                 centerY,
                 getRectangularField(centerX, centerY, fieldRadius, FOOTBALL_FIELD_ASPECT)
             );
+            break;
+        case 'cricket':
+            drawCricketField(centerX, centerY, fieldRadius);
             break;
         default:
             drawSoccerField(
@@ -1721,6 +1964,10 @@ function render() {
     });
 
     drawEventIndicators();
+
+    // Draw atmospheric overlays (day/night then weather on top)
+    drawDayNightOverlay();
+    drawWeatherOverlay();
 
     // Update HUD
     updateHUD();
@@ -1849,6 +2096,9 @@ function gameLoop(timestamp) {
 
         // Update game state
         updateGameState(cappedDt);
+
+        // Advance weather particle positions
+        tickWeatherParticles(cappedDt);
 
         // Update stats
         updateStats(cappedDt);
@@ -2113,19 +2363,23 @@ function setupInputHandlers() {
     const volumeLabel = document.getElementById('volume-label');
     const fieldTypeSelect = document.getElementById('field-type-select');
     const stadiumTypeSelect = document.getElementById('stadium-type-select');
+    const weatherSelect = document.getElementById('weather-select');
+    const timeSelect = document.getElementById('time-select');
     fieldType = fieldTypeSelect ? fieldTypeSelect.value : 'soccer';
     stadiumType = stadiumTypeSelect ? stadiumTypeSelect.value : 'classic';
+    weatherType = weatherSelect ? weatherSelect.value : 'sunny';
+    timeOfDay = timeSelect ? timeSelect.value : 'day';
 
     soundToggle.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
         soundTogglePause.checked = soundEnabled;
     });
-    
+
     soundTogglePause.addEventListener('change', (e) => {
         soundEnabled = e.target.checked;
         soundToggle.checked = soundEnabled;
     });
-    
+
     document.getElementById('difficulty-select').addEventListener('change', (e) => {
         difficulty = e.target.value;
         console.log('Difficulty set to:', difficulty);
@@ -2135,8 +2389,14 @@ function setupInputHandlers() {
         fieldTypeSelect.addEventListener('change', (e) => {
             fieldType = e.target.value;
             resetFieldGradients();
-
+            // Notify engine of venue change
             if (gameState) {
+                if (useMockEngine) {
+                    mockGameAPI.set_venue(fieldType);
+                } else {
+                    pyodide.globals.set('venue_val', fieldType);
+                    pyodide.runPython('set_venue(venue_val)');
+                }
                 render();
             }
         });
@@ -2145,7 +2405,32 @@ function setupInputHandlers() {
     if (stadiumTypeSelect) {
         stadiumTypeSelect.addEventListener('change', (e) => {
             stadiumType = e.target.value;
-            
+
+            if (gameState) {
+                render();
+            }
+        });
+    }
+
+    if (weatherSelect) {
+        weatherSelect.addEventListener('change', (e) => {
+            weatherType = e.target.value;
+            weatherParticles = [];
+            if (gameState) {
+                if (useMockEngine) {
+                    mockGameAPI.set_weather(weatherType);
+                } else {
+                    pyodide.globals.set('weather_val', weatherType);
+                    pyodide.runPython('set_weather(weather_val)');
+                }
+            }
+        });
+    }
+
+    if (timeSelect) {
+        timeSelect.addEventListener('change', (e) => {
+            timeOfDay = e.target.value;
+            resetFieldGradients();
             if (gameState) {
                 render();
             }
@@ -2194,8 +2479,13 @@ function startGame() {
     difficulty = document.getElementById('difficulty-select').value;
     const fieldTypeSelectElem = document.getElementById('field-type-select');
     const stadiumTypeSelectElem = document.getElementById('stadium-type-select');
+    const weatherSelectElem = document.getElementById('weather-select');
+    const timeSelectElem = document.getElementById('time-select');
     fieldType = fieldTypeSelectElem ? fieldTypeSelectElem.value : 'soccer';
     stadiumType = stadiumTypeSelectElem ? stadiumTypeSelectElem.value : 'classic';
+    weatherType = weatherSelectElem ? weatherSelectElem.value : 'sunny';
+    timeOfDay = timeSelectElem ? timeSelectElem.value : 'day';
+    weatherParticles = [];
     resetFieldGradients();
     resetEventIndicators();
 
