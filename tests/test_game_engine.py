@@ -274,8 +274,8 @@ class TestSpecialWavePatterns:
         assert game.wave_direction == -1
         assert game.current_wave_sector == 0
 
-        # Update to propagate
-        game.update(0.5)
+        # Update enough to propagate (wave_speed = 1.0s)
+        game.update(1.1)
 
         # Should have moved counter-clockwise to sector 7
         assert game.current_wave_sector == 7 or game.sectors[7].state in [SectorState.ANTICIPATING, SectorState.STANDING]
@@ -312,9 +312,9 @@ class TestSpecialWavePatterns:
         assert game.wave_pattern == 'accelerating'
         initial_speed = game.wave_speed
 
-        # Update multiple times to see speed change
+        # Update multiple times to see speed change (wave_speed = 1.0s, so need > 1.0s total)
         for _ in range(3):
-            game.update(0.35)
+            game.update(0.55)
 
         # Speed should have decreased (faster)
         assert game.wave_speed < initial_speed
@@ -370,3 +370,76 @@ class TestSpecialWavePatterns:
         assert state['wave_direction'] == -1
         assert 'second_wave_active' in state
         assert 'second_current_wave_sector' in state
+
+
+class TestVenueModifiers:
+    """Test per-venue difficulty modifiers"""
+
+    def test_cricket_higher_readiness_threshold(self):
+        soccer = WaveGame(8, venue='soccer')
+        cricket = WaveGame(8, venue='cricket')
+        assert cricket.sectors[0]._readiness_threshold > soccer.sectors[0]._readiness_threshold
+
+    def test_cricket_lower_energy_rate(self):
+        soccer = WaveGame(8, venue='soccer')
+        cricket = WaveGame(8, venue='cricket')
+        assert cricket.sectors[0]._energy_rate_mult < soccer.sectors[0]._energy_rate_mult
+
+    def test_baseball_between_soccer_and_cricket(self):
+        soccer = WaveGame(8, venue='soccer')
+        baseball = WaveGame(8, venue='baseball')
+        cricket = WaveGame(8, venue='cricket')
+        assert soccer.sectors[0]._readiness_threshold < baseball.sectors[0]._readiness_threshold < cricket.sectors[0]._readiness_threshold
+
+    def test_set_venue_updates_all_sectors(self):
+        game = WaveGame(8, venue='soccer')
+        original = game.sectors[0]._readiness_threshold
+        game.set_venue('cricket')
+        for sector in game.sectors:
+            assert sector._readiness_threshold > original
+
+    def test_game_state_includes_venue(self):
+        game = WaveGame(8, venue='cricket')
+        state = game.get_state()
+        assert state['venue'] == 'cricket'
+
+
+class TestWeatherModifiers:
+    """Test weather crowd-behaviour modifiers"""
+
+    def test_rainy_lower_energy_rate_than_sunny(self):
+        sunny = WaveGame(8, weather='sunny')
+        rainy = WaveGame(8, weather='rainy')
+        assert rainy.sectors[0]._energy_rate_mult < sunny.sectors[0]._energy_rate_mult
+
+    def test_snowy_lowest_energy_rate(self):
+        sunny = WaveGame(8, weather='sunny')
+        snowy = WaveGame(8, weather='snowy')
+        assert snowy.sectors[0]._energy_rate_mult < sunny.sectors[0]._energy_rate_mult
+
+    def test_weather_affects_energy_recovery_rate(self):
+        rainy = WaveGame(8, weather='rainy')
+        sector = rainy.sectors[0]
+        sector.energy = 0.0
+        sector.fatigue = 0.0
+        sector.state = SectorState.IDLE
+        sector.update(1.0)
+        assert sector.energy < 0.1  # rainy mult is 0.7 → recovery < 0.1/s
+
+    def test_set_weather_updates_all_sectors(self):
+        game = WaveGame(8, weather='sunny')
+        original_rate = game.sectors[0]._energy_rate_mult
+        game.set_weather('rainy')
+        for sector in game.sectors:
+            assert sector._energy_rate_mult < original_rate
+
+    def test_combined_venue_weather_multipliers(self):
+        game = WaveGame(8, venue='cricket', weather='rainy')
+        # cricket energy_rate=0.9, rainy energy_rate=0.7 → combined 0.63
+        expected = 0.9 * 0.7
+        assert abs(game.sectors[0]._energy_rate_mult - expected) < 1e-9
+
+    def test_game_state_includes_weather(self):
+        game = WaveGame(8, weather='snowy')
+        state = game.get_state()
+        assert state['weather'] == 'snowy'
