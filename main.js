@@ -1049,8 +1049,8 @@ function getSectorGeometry(sectorId, totalSectors) {
     }
     
     // Fallback for dynamic calculations
-    const centerX = canvas.width / (2 * (window.devicePixelRatio || 1));
-    const centerY = canvas.height / (2 * (window.devicePixelRatio || 1));
+    const centerX = canvas.width / (2 * effectivePixelRatio);
+    const centerY = canvas.height / (2 * effectivePixelRatio);
     const angle = (sectorId / totalSectors) * Math.PI * 2 - Math.PI / 2;
     
     return {
@@ -1217,8 +1217,8 @@ function drawSector(sector, index, totalSectors) {
         (sector.state === 'standing' || sector.state === 'anticipating')) {
         const heightMultiplier = sector.state === 'standing' ? 1.5 : 1.2;
         const extendedRadius = geom.outerRadius + SECTOR_HEIGHT * (heightMultiplier - 1);
-        const centerX = geom.centerX || (canvas.width / (2 * (window.devicePixelRatio || 1)));
-        const centerY = geom.centerY || (canvas.height / (2 * (window.devicePixelRatio || 1)));
+        const centerX = geom.centerX || (canvas.width / (2 * effectivePixelRatio));
+        const centerY = geom.centerY || (canvas.height / (2 * effectivePixelRatio));
         
         ctx.beginPath();
         ctx.arc(centerX, centerY, extendedRadius, geom.startAngle, geom.endAngle);
@@ -1339,7 +1339,7 @@ function drawSoccerField(centerX, centerY, fieldRect) {
 }
 
 function getRectangularField(centerX, centerY, fieldRadius, targetAspect = null) {
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    const devicePixelRatio = effectivePixelRatio;
     const canvasWidth = canvas.width / devicePixelRatio;
     const canvasHeight = canvas.height / devicePixelRatio;
     const canvasAspect = canvasWidth / canvasHeight || 1;
@@ -1546,7 +1546,7 @@ function drawFootballField(centerX, centerY, fieldRect) {
 }
 
 function drawField() {
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    const devicePixelRatio = effectivePixelRatio;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
     const fieldRadius = STADIUM_RADIUS - SECTOR_HEIGHT - 20;
@@ -1575,7 +1575,7 @@ function drawField() {
 function drawEventIndicators() {
     if (!gameState || activeEventIndicators.length === 0) return;
 
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    const devicePixelRatio = effectivePixelRatio;
     const centerX = canvas.width / (2 * devicePixelRatio);
     const centerY = canvas.height / (2 * devicePixelRatio);
 
@@ -1633,7 +1633,7 @@ function drawEventIndicators() {
 function render() {
     if (!gameState) return;
     
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    const devicePixelRatio = effectivePixelRatio;
     const canvasWidth = canvas.width / devicePixelRatio;
     const canvasHeight = canvas.height / devicePixelRatio;
     
@@ -1852,7 +1852,7 @@ function stopGameLoop() {
 function getSectorAtPosition(x, y) {
     if (!gameState) return -1;
     
-    const devicePixelRatio = window.devicePixelRatio || 1;
+    const devicePixelRatio = effectivePixelRatio;
     const centerX = (canvas.width / devicePixelRatio) / 2;
     const centerY = (canvas.height / devicePixelRatio) / 2;
     
