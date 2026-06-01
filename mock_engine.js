@@ -6,6 +6,7 @@
 const VENUE_MODIFIERS = {
     soccer:   { energy_rate: 1.00, fatigue_rate: 1.00, readiness_threshold: 0.30 },
     baseball: { energy_rate: 0.95, fatigue_rate: 1.05, readiness_threshold: 0.32 },
+    football: { energy_rate: 1.00, fatigue_rate: 1.00, readiness_threshold: 0.30 },
     cricket:  { energy_rate: 0.90, fatigue_rate: 1.10, readiness_threshold: 0.35 },
 };
 
@@ -130,7 +131,7 @@ class MockWaveGame {
         this.time_elapsed = 0.0;
         this.successful_waves = 0;
         this.failed_waves = 0;
-        this.wave_speed = 0.6;
+        this.wave_speed = 1.0;
         this.wave_timer = 0.0;
         this.events = [];
         this.stadium_level = 1;
@@ -139,7 +140,7 @@ class MockWaveGame {
         // Special wave pattern support
         this.wave_pattern = 'normal';  // normal, reverse, double, accelerating
         this.wave_direction = 1;  // 1 for clockwise, -1 for counter-clockwise
-        this.base_wave_speed = 0.6;
+        this.base_wave_speed = 1.0;
         this.speed_increment = 0.0;  // for accelerating pattern
         this.sectors_traveled = 0;
 

@@ -11,6 +11,7 @@ import json
 VENUE_MODIFIERS: Dict[str, Dict] = {
     'soccer':   {'energy_rate': 1.00, 'fatigue_rate': 1.00, 'readiness_threshold': 0.30},
     'baseball': {'energy_rate': 0.95, 'fatigue_rate': 1.05, 'readiness_threshold': 0.32},
+    'football': {'energy_rate': 1.00, 'fatigue_rate': 1.00, 'readiness_threshold': 0.30},
     'cricket':  {'energy_rate': 0.90, 'fatigue_rate': 1.10, 'readiness_threshold': 0.35},
 }
 
@@ -140,7 +141,7 @@ class WaveGame:
         self.time_elapsed = 0.0
         self.successful_waves = 0
         self.failed_waves = 0
-        self.wave_speed = 0.6  # seconds between sectors
+        self.wave_speed = 1.0  # seconds between sectors
         self.wave_timer = 0.0
         self.events = []
         self.stadium_level = 1
@@ -149,7 +150,7 @@ class WaveGame:
         # Special wave pattern support
         self.wave_pattern = 'normal'  # normal, reverse, double, accelerating
         self.wave_direction = 1  # 1 for clockwise, -1 for counter-clockwise
-        self.base_wave_speed = 0.6
+        self.base_wave_speed = 1.0
         self.speed_increment = 0.0  # for accelerating pattern
         self.sectors_traveled = 0
 

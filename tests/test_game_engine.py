@@ -274,8 +274,8 @@ class TestSpecialWavePatterns:
         assert game.wave_direction == -1
         assert game.current_wave_sector == 0
 
-        # Update enough to propagate (wave_speed = 0.6s)
-        game.update(0.7)
+        # Update enough to propagate (wave_speed = 1.0s)
+        game.update(1.1)
 
         # Should have moved counter-clockwise to sector 7
         assert game.current_wave_sector == 7 or game.sectors[7].state in [SectorState.ANTICIPATING, SectorState.STANDING]
@@ -312,9 +312,9 @@ class TestSpecialWavePatterns:
         assert game.wave_pattern == 'accelerating'
         initial_speed = game.wave_speed
 
-        # Update multiple times to see speed change
+        # Update multiple times to see speed change (wave_speed = 1.0s, so need > 1.0s total)
         for _ in range(3):
-            game.update(0.35)
+            game.update(0.55)
 
         # Speed should have decreased (faster)
         assert game.wave_speed < initial_speed
