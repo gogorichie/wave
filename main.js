@@ -1870,10 +1870,14 @@ function getSectorAtPosition(x, y) {
     let angle = Math.atan2(dy, dx);
     angle = angle + Math.PI / 2; // Adjust so sector 0 is at top
     if (angle < 0) angle += Math.PI * 2;
-    
+
     const totalSectors = gameState.sectors.length;
-    const sectorIndex = Math.floor((angle / (Math.PI * 2)) * totalSectors);
-    
+    // Sectors are drawn centered on their angle (see precomputeSectorPaths),
+    // so shift by half a sector before bucketing. Without this, the hit region
+    // is rotated half a sector and clicks/hover land on the neighboring sector.
+    const angleWidth = (Math.PI * 2) / totalSectors;
+    const sectorIndex = Math.floor(((angle + angleWidth / 2) / (Math.PI * 2)) * totalSectors);
+
     return sectorIndex % totalSectors;
 }
 
