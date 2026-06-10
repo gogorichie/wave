@@ -487,6 +487,12 @@ def update_game(dt: float) -> str:
     return json.dumps(game.get_state())
 
 
+def update_game_with_events(dt: float) -> str:
+    """Update game and return state plus pending events in a single payload"""
+    game.update(dt)
+    return json.dumps({'state': game.get_state(), 'events': game.get_events()})
+
+
 def start_wave_at(sector_id: int, pattern: Optional[str] = None) -> str:
     """Start wave from sector"""
     success = game.start_wave(sector_id, pattern)

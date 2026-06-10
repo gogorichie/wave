@@ -504,6 +504,13 @@ export const mockGameAPI = {
         this.game.update(dt);
         return JSON.stringify(this.game.get_state());
     },
+
+    // Fast path for the render loop: returns plain objects so the caller
+    // avoids a JSON stringify/parse round trip every frame.
+    update_game_with_events(dt) {
+        this.game.update(dt);
+        return { state: this.game.get_state(), events: this.game.get_events() };
+    },
     
     start_wave_at(sector_id, pattern = null) {
         const success = this.game.start_wave(sector_id, pattern);

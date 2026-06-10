@@ -7,6 +7,7 @@ import { mockGameAPI } from './mock_engine.js';
 
 // Global state
 let pyodide = null;
+let pyFns = null; // cached Python function handles (avoids per-call runPython compiles)
 let useMockEngine = false;
 let canvas = null;
 let ctx = null;
@@ -83,6 +84,21 @@ const SECTOR_HEIGHT = 60;
 const SOCCER_FIELD_ASPECT = 105 / 68; // landscape: long (105m) side is width
 const FOOTBALL_FIELD_ASPECT = 120 / 53.3; // landscape: long (120 yd) side is width
 const MAX_WEATHER_PARTICLES = 150;
+// Particles are pre-assigned to a few discrete opacity buckets so each
+// bucket renders as one batched path instead of per-particle state changes
+const RAIN_OPACITY_BUCKETS = [0.3, 0.45, 0.6];
+const SNOW_OPACITY_BUCKETS = [0.5, 0.7, 0.9];
+
+function getMaxWeatherParticles() {
+    switch (performanceTier) {
+        case 'low':
+            return 60;
+        case 'medium':
+            return 100;
+        default:
+            return MAX_WEATHER_PARTICLES;
+    }
+}
 
 // Stadium color themes
 const STADIUM_THEMES = {
@@ -130,11 +146,29 @@ const BASEBALL_MOUND_DISTANCE_RATIO = 0.9;  // Pitcher's mound is 90% of base di
 let sectorPaths = [];
 let offscreenCanvas = null;
 let offscreenCtx = null;
+let overlayCanvas = null;
+let overlayCtx = null;
+let fieldCacheValid = false;
+let overlayCacheValid = false;
 let resizeTimeout = null;
 let fieldGradients = {};
+let triggerCanvasResize = null;
+const sectorColorCache = new Map();
+
+// The engine ticks at a lower rate than the render loop; crowd state changes
+// over 0.2-1.5s windows, so 30Hz is indistinguishable and halves bridge cost.
+const ENGINE_UPDATE_INTERVAL = 1 / 30;
+let engineTimeAccumulator = 0;
+
+// Cached HUD element refs and last written values (avoid per-frame
+// getElementById lookups and redundant textContent writes)
+const hudElements = {};
+const lastHudText = {};
 
 // Performance tier and monitoring
 let performanceTier = 'high'; // 'low', 'medium', 'high'
+let baselinePerformanceTier = 'high'; // detected ceiling; recovery never exceeds it
+let goodFpsSeconds = 0;
 let effectivePixelRatio = 1;
 let isTabVisible = true;
 let lastFrameTime = 0;
@@ -142,6 +176,10 @@ let frameCount = 0;
 let fpsHistory = [];
 const TARGET_FPS = 60;
 const LOW_FPS_THRESHOLD = 30;
+const HIGH_FPS_THRESHOLD = 55;
+const TIER_RECOVERY_SECONDS = 30;
+const TIER_RANK = { low: 0, medium: 1, high: 2 };
+const TIER_BY_RANK = ['low', 'medium', 'high'];
 const PERFORMANCE_TIER_LOW_THRESHOLD = 40;
 const PERFORMANCE_TIER_MEDIUM_THRESHOLD = 70;
 const HIDDEN_TAB_UPDATE_INTERVAL = 200; // milliseconds
@@ -152,8 +190,7 @@ let performanceMetrics = {
     renderTimings: [],
     updateTimings: [],
     lastGCTime: 0,
-    avgFrameTime: 0,
-    peakFrameTime: 0
+    avgFrameTime: 0
 };
 
 // Object pools for performance
@@ -184,6 +221,18 @@ function savePerformanceTier() {
         localStorage.setItem('wave_performance_tier', performanceTier);
     } catch (e) {
         console.warn('Could not save performance tier to localStorage');
+    }
+}
+
+/**
+ * Load previously measured performance tier from localStorage
+ */
+function loadSavedPerformanceTier() {
+    try {
+        const tier = localStorage.getItem('wave_performance_tier');
+        return TIER_RANK.hasOwnProperty(tier) ? tier : null;
+    } catch (e) {
+        return null;
     }
 }
 
@@ -318,22 +367,46 @@ function detectPerformanceTier() {
     }
     
     // Determine tier based on score
+    let detectedTier;
     if (score < PERFORMANCE_TIER_LOW_THRESHOLD) {
-        performanceTier = 'low';
+        detectedTier = 'low';
     } else if (score < PERFORMANCE_TIER_MEDIUM_THRESHOLD) {
-        performanceTier = 'medium';
+        detectedTier = 'medium';
     } else {
-        performanceTier = 'high';
+        detectedTier = 'high';
     }
-    
+
+    baselinePerformanceTier = detectedTier;
+
+    // Start from the previously measured tier when it is lower than the
+    // heuristic, so a device that auto-downgraded last session doesn't have
+    // to re-discover the slowdown. Recovery can step it back up.
+    const savedTier = loadSavedPerformanceTier();
+    performanceTier = savedTier && TIER_RANK[savedTier] < TIER_RANK[detectedTier]
+        ? savedTier
+        : detectedTier;
+
     effectivePixelRatio = getEffectivePixelRatio(performanceTier);
-    
+
     console.log(`Performance tier: ${performanceTier} (score: ${score}, DPR: ${dpr} -> ${effectivePixelRatio})`);
-    
+
     // Store in localStorage for consistency
     savePerformanceTier();
-    
+
     return performanceTier;
+}
+
+/**
+ * Apply a performance tier change: update DPR, persist, and resize the canvas
+ */
+function applyPerformanceTierChange() {
+    effectivePixelRatio = getEffectivePixelRatio(performanceTier);
+    savePerformanceTier();
+    fpsHistory = [];
+    goodFpsSeconds = 0;
+    if (triggerCanvasResize) {
+        triggerCanvasResize();
+    }
 }
 
 /**
@@ -361,24 +434,20 @@ function monitorPerformance(timestamp) {
         // Auto-downgrade if consistently low FPS
         if (avgFps < LOW_FPS_THRESHOLD && performanceTier !== 'low') {
             console.warn(`Low FPS detected (${avgFps.toFixed(1)}), downgrading performance tier`);
-            if (performanceTier === 'high') {
-                performanceTier = 'medium';
-            } else if (performanceTier === 'medium') {
-                performanceTier = 'low';
+            performanceTier = TIER_BY_RANK[TIER_RANK[performanceTier] - 1];
+            applyPerformanceTierChange();
+        } else if (avgFps >= HIGH_FPS_THRESHOLD &&
+                   TIER_RANK[performanceTier] < TIER_RANK[baselinePerformanceTier]) {
+            // Recover one tier after sustained good FPS (never past the
+            // detected baseline, to avoid oscillating beyond device limits)
+            goodFpsSeconds++;
+            if (goodFpsSeconds >= TIER_RECOVERY_SECONDS) {
+                console.log(`Sustained ${avgFps.toFixed(1)} FPS, upgrading performance tier`);
+                performanceTier = TIER_BY_RANK[TIER_RANK[performanceTier] + 1];
+                applyPerformanceTierChange();
             }
-
-            effectivePixelRatio = getEffectivePixelRatio(performanceTier);
-
-            // Save updated tier to localStorage
-            savePerformanceTier();
-
-            // Trigger canvas resize to apply new DPR
-            const container = document.getElementById('game-container');
-            if (container && canvas && ctx) {
-                const dimensions = setupHighDPICanvas(canvas, ctx, container);
-                precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
-                                    dimensions.width / 2, dimensions.height / 2);
-            }
+        } else {
+            goodFpsSeconds = 0;
         }
 
         frameCount = 0;
@@ -409,9 +478,6 @@ function collectPerformanceMetrics(frameTime, renderTime, updateTime) {
     if (metrics.updateTimings.length > 60) {
         metrics.updateTimings.shift();
     }
-
-    // Calculate peak frame time
-    metrics.peakFrameTime = Math.max(metrics.peakFrameTime, frameTime);
 }
 
 /**
@@ -421,7 +487,11 @@ function getPerformanceStats() {
     const metrics = performanceMetrics;
     return {
         avgFrameTime: metrics.avgFrameTime,
-        peakFrameTime: metrics.peakFrameTime,
+        // Peak over the last 60 frames, so one bad frame at startup
+        // doesn't poison the metric for the whole session
+        peakFrameTime: metrics.frameTimings.length > 0
+            ? Math.max(...metrics.frameTimings)
+            : 0,
         avgRenderTime: metrics.renderTimings.length > 0
             ? metrics.renderTimings.reduce((a, b) => a + b, 0) / metrics.renderTimings.length
             : 0,
@@ -437,7 +507,7 @@ function getPerformanceStats() {
  */
 function setupVisibilityHandler() {
     // Handle visibility change
-    document.addEventListener('visibilitychange', () => {
+    addTrackedEventListener(document, 'visibilitychange', () => {
         isTabVisible = !document.hidden;
 
         if (isTabVisible) {
@@ -484,14 +554,27 @@ async function initPyodide() {
     }
     
     try {
-        console.log('Loading Pyodide...');
-        pyodide = await loadPyodide();
-        
-        console.log('Loading Python game engine...');
-        const response = await fetch('/game_engine.py');
-        const pythonCode = await response.text();
+        console.log('Loading Pyodide and Python game engine...');
+        // Fetch the engine source in parallel with the Pyodide runtime download
+        const [pyodideInstance, pythonCode] = await Promise.all([
+            loadPyodide(),
+            fetch('/game_engine.py').then(response => response.text())
+        ]);
+        pyodide = pyodideInstance;
         await pyodide.runPythonAsync(pythonCode);
-        
+
+        // Cache function handles once; calling them directly avoids
+        // re-compiling a Python source string on every call
+        pyFns = {
+            init_game: pyodide.globals.get('init_game'),
+            update_game_with_events: pyodide.globals.get('update_game_with_events'),
+            start_wave_at: pyodide.globals.get('start_wave_at'),
+            boost_sector_energy: pyodide.globals.get('boost_sector_energy'),
+            trigger_event: pyodide.globals.get('trigger_event'),
+            set_venue: pyodide.globals.get('set_venue'),
+            set_weather: pyodide.globals.get('set_weather')
+        };
+
         console.log('Python game engine loaded successfully');
         return true;
     } catch (error) {
@@ -511,7 +594,7 @@ function initGame() {
         if (useMockEngine) {
             result = mockGameAPI.init_game(16, fieldType, weatherType);
         } else {
-            result = pyodide.runPython(`init_game(16, venue='${fieldType}', weather='${weatherType}')`);
+            result = pyFns.init_game(16, fieldType, weatherType);
         }
         console.log('Game initialized:', result);
         return true;
@@ -526,20 +609,18 @@ function initGame() {
  */
 function updateGameState(dt) {
     try {
-        let stateJson, eventsJson;
+        // Single engine call per tick returning both state and events.
+        // The mock engine hands back plain objects (no JSON round trip);
+        // the Python engine crosses the bridge once as a JSON string.
+        let payload;
         if (useMockEngine) {
-            stateJson = mockGameAPI.update_game(dt);
-            eventsJson = mockGameAPI.get_events();
+            payload = mockGameAPI.update_game_with_events(dt);
         } else {
-            pyodide.globals.set('dt_value', dt);
-            stateJson = pyodide.runPython(`update_game(dt_value)`);
-            eventsJson = pyodide.runPython(`get_events()`);
+            payload = JSON.parse(pyFns.update_game_with_events(dt));
         }
 
-        gameState = JSON.parse(stateJson);
-        const events = JSON.parse(eventsJson);
-
-        events.forEach(event => handleGameEvent(event));
+        gameState = payload.state;
+        payload.events.forEach(event => handleGameEvent(event));
 
         return gameState;
     } catch (error) {
@@ -801,14 +882,14 @@ function updateStats(dt) {
     
     // Update game time
     totalGameTime += dt;
-    document.getElementById('game-time').textContent = formatTime(totalGameTime);
-    
+    setHudText('game-time', formatTime(totalGameTime));
+
     // Update accuracy
-    const accuracy = waveAttempts > 0 ? (successfulWaves / waveAttempts * 100).toFixed(0) : 100;
-    document.getElementById('accuracy').textContent = accuracy + '%';
-    
+    const accuracy = waveAttempts > 0 ? (successfulWaves / waveAttempts * 100).toFixed(0) : '100';
+    setHudText('accuracy', accuracy + '%');
+
     // Update streak
-    document.getElementById('streak').textContent = currentStreak;
+    setHudText('streak', String(currentStreak));
 }
 
 /**
@@ -820,8 +901,7 @@ function startWave(sectorId) {
         if (useMockEngine) {
             resultJson = mockGameAPI.start_wave_at(sectorId);
         } else {
-            pyodide.globals.set('sector_id', sectorId);
-            resultJson = pyodide.runPython(`start_wave_at(sector_id)`);
+            resultJson = pyFns.start_wave_at(sectorId);
         }
         const result = JSON.parse(resultJson);
         return result.success;
@@ -839,8 +919,7 @@ function boostSector(sectorId) {
         if (useMockEngine) {
             mockGameAPI.boost_sector_energy(sectorId);
         } else {
-            pyodide.globals.set('sector_id', sectorId);
-            pyodide.runPython(`boost_sector_energy(sector_id)`);
+            pyFns.boost_sector_energy(sectorId);
         }
     } catch (error) {
         console.error('Failed to boost sector:', error);
@@ -855,13 +934,7 @@ function triggerStadiumEvent(eventType, sectorId = null) {
         if (useMockEngine) {
             mockGameAPI.trigger_event(eventType, sectorId);
         } else {
-            pyodide.globals.set('event_type', eventType);
-            if (sectorId === null || sectorId === undefined) {
-                pyodide.runPython('trigger_event(event_type)');
-            } else {
-                pyodide.globals.set('sector_id', sectorId);
-                pyodide.runPython('trigger_event(event_type, sector_id)');
-            }
+            pyFns.trigger_event(eventType, sectorId ?? null);
         }
     } catch (error) {
         console.error('Failed to trigger event:', error);
@@ -1006,11 +1079,14 @@ function setupCanvas() {
     // Initial setup
     const dimensions = setupHighDPICanvas(canvas, ctx, container);
     precomputeSectorPaths(16, dimensions.width / 2, dimensions.height / 2);
-    
-    // Setup offscreen canvas for performance
+
+    // Offscreen canvases caching the static field and day/night overlay
+    // layers, so they're blitted (not re-drawn) every frame
     offscreenCanvas = document.createElement('canvas');
     offscreenCtx = offscreenCanvas.getContext('2d');
-    
+    overlayCanvas = document.createElement('canvas');
+    overlayCtx = overlayCanvas.getContext('2d');
+
     // Apply initial HUD scaling
     updateHUDScaling();
 
@@ -1019,12 +1095,6 @@ function setupCanvas() {
         const newDimensions = setupHighDPICanvas(canvas, ctx, container);
         precomputeSectorPaths(gameState ? gameState.sectors.length : 16,
                             newDimensions.width / 2, newDimensions.height / 2);
-
-        // Update offscreen canvas size (only if used, which is minimal in current code)
-        const devicePixelRatio = effectivePixelRatio;
-        offscreenCanvas.width = newDimensions.width * devicePixelRatio;
-        offscreenCanvas.height = newDimensions.height * devicePixelRatio;
-        offscreenCtx.scale(devicePixelRatio, devicePixelRatio);
 
         resetFieldGradients();
 
@@ -1038,14 +1108,17 @@ function setupCanvas() {
         }
     };
 
+    // Expose so the performance monitor can apply tier/DPR changes
+    triggerCanvasResize = handleResize;
+
     // Debounced resize handler for regular resize events
     const debouncedResize = debounce(handleResize, 150);
 
     // Handle resize events
-    window.addEventListener('resize', debouncedResize);
+    addTrackedEventListener(window, 'resize', debouncedResize);
 
     // Handle orientation changes immediately (no debounce for better responsiveness)
-    window.addEventListener('orientationchange', () => {
+    addTrackedEventListener(window, 'orientationchange', () => {
         // Small delay to ensure viewport has updated after orientation change
         setTimeout(handleResize, 100);
     });
@@ -1078,31 +1151,43 @@ function getSectorGeometry(sectorId, totalSectors) {
 /**
  * Get color for sector based on state
  */
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function getSectorColor(sector) {
-    const state = sector.state;
-    const energy = sector.energy;
+    // Quantize energy to 32 steps so colors are served from a small cache
+    // instead of re-parsing hex and allocating rgba strings per sector per frame
+    const energyStep = Math.min(31, Math.floor(sector.energy * 32));
+    const key = sector.state + '|' + energyStep;
+    let color = sectorColorCache.get(key);
+    if (color) return color;
+
+    const energy = energyStep / 32;
     const theme = STADIUM_THEMES[stadiumType] || STADIUM_THEMES.classic;
-    
-    // Helper to convert hex to rgba with alpha
-    function hexToRgba(hex, alpha) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-    
-    switch (state) {
+
+    switch (sector.state) {
         case 'idle':
-            return hexToRgba(theme.idle, 0.5 + energy * 0.5);
+            color = hexToRgba(theme.idle, 0.5 + energy * 0.5);
+            break;
         case 'anticipating':
-            return hexToRgba(theme.anticipating, 0.7 + energy * 0.3);
+            color = hexToRgba(theme.anticipating, 0.7 + energy * 0.3);
+            break;
         case 'standing':
-            return hexToRgba(theme.standing, 0.8 + energy * 0.2);
+            color = hexToRgba(theme.standing, 0.8 + energy * 0.2);
+            break;
         case 'seated':
-            return hexToRgba(theme.seated, 0.4 + energy * 0.4);
+            color = hexToRgba(theme.seated, 0.4 + energy * 0.4);
+            break;
         default:
-            return 'rgba(100, 100, 100, 0.5)';
+            color = 'rgba(100, 100, 100, 0.5)';
     }
+
+    sectorColorCache.set(key, color);
+    return color;
 }
 
 function getEnergyFillColor(energy) {
@@ -1242,15 +1327,9 @@ function drawSector(sector, index, totalSectors) {
         ctx.fill();
     }
     
-    // Draw sector number (use precomputed text position)
-    const textX = geom.textX;
-    const textY = geom.textY;
-    
+    // Draw sector number (font/alignment set once per frame in render())
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(index, textX, textY);
+    ctx.fillText(index, geom.textX, geom.textY);
 
     drawEnergyIndicator(sector, geom);
 }
@@ -1260,6 +1339,60 @@ function drawSector(sector, index, totalSectors) {
  */
 function resetFieldGradients() {
     fieldGradients = {};
+    fieldCacheValid = false;
+    overlayCacheValid = false;
+}
+
+/**
+ * Run a draw function against another 2D context. The field/overlay drawing
+ * helpers all use the module-level `ctx`, so this temporarily swaps it.
+ */
+function withContext(targetCtx, drawFn) {
+    const previousCtx = ctx;
+    ctx = targetCtx;
+    try {
+        drawFn();
+    } finally {
+        ctx = previousCtx;
+    }
+}
+
+/**
+ * Re-render the static field layer (background + field markings) into the
+ * offscreen canvas. Runs only when size, field type, or tier changes.
+ */
+function ensureFieldCache() {
+    if (fieldCacheValid) return;
+
+    const devicePixelRatio = effectivePixelRatio;
+    offscreenCanvas.width = canvas.width;
+    offscreenCanvas.height = canvas.height;
+    offscreenCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+    withContext(offscreenCtx, () => {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width / devicePixelRatio, canvas.height / devicePixelRatio);
+        drawField();
+    });
+
+    fieldCacheValid = true;
+}
+
+/**
+ * Re-render the static day/night overlay (vignette, floodlights) into its
+ * cache canvas. Runs only when size or time-of-day changes.
+ */
+function ensureOverlayCache() {
+    if (overlayCacheValid) return;
+
+    const devicePixelRatio = effectivePixelRatio;
+    overlayCanvas.width = canvas.width;
+    overlayCanvas.height = canvas.height;
+    overlayCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+    withContext(overlayCtx, drawDayNightOverlay);
+
+    overlayCacheValid = true;
 }
 
 function getFieldGradient(key, builder) {
@@ -1756,30 +1889,37 @@ function drawWeatherOverlay() {
     ctx.save();
 
     if (weatherType === 'cloudy') {
-        const grad = ctx.createRadialGradient(canvasWidth / 2, 0, 0, canvasWidth / 2, canvasHeight / 2, canvasWidth);
-        grad.addColorStop(0, 'rgba(100, 110, 130, 0.22)');
-        grad.addColorStop(1, 'rgba(60, 70, 90, 0.08)');
+        const grad = getFieldGradient('cloudy-overlay', () => {
+            const g = ctx.createRadialGradient(canvasWidth / 2, 0, 0, canvasWidth / 2, canvasHeight / 2, canvasWidth);
+            g.addColorStop(0, 'rgba(100, 110, 130, 0.22)');
+            g.addColorStop(1, 'rgba(60, 70, 90, 0.08)');
+            return g;
+        });
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     } else if (weatherType === 'rainy') {
         // Seed new particles
-        while (weatherParticles.length < MAX_WEATHER_PARTICLES) {
+        const maxParticles = getMaxWeatherParticles();
+        while (weatherParticles.length < maxParticles) {
             weatherParticles.push({
                 x: Math.random() * canvasWidth,
                 y: Math.random() * canvasHeight,
                 len: 8 + Math.random() * 10,
                 speed: 280 + Math.random() * 120,
-                opacity: 0.25 + Math.random() * 0.35,
+                bucket: Math.floor(Math.random() * RAIN_OPACITY_BUCKETS.length),
             });
         }
-        // Draw and advance each raindrop
+        // Draw raindrops batched per opacity bucket: one path + one stroke each
         ctx.strokeStyle = 'rgba(130, 170, 220, 1)';
         ctx.lineWidth = 1;
-        for (const p of weatherParticles) {
-            ctx.globalAlpha = p.opacity;
+        for (let b = 0; b < RAIN_OPACITY_BUCKETS.length; b++) {
+            ctx.globalAlpha = RAIN_OPACITY_BUCKETS[b];
             ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p.x - p.len * 0.25, p.y + p.len);
+            for (const p of weatherParticles) {
+                if (p.bucket !== b) continue;
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x - p.len * 0.25, p.y + p.len);
+            }
             ctx.stroke();
         }
         ctx.globalAlpha = 1;
@@ -1788,21 +1928,27 @@ function drawWeatherOverlay() {
         ctx.fillStyle = 'rgba(60, 80, 120, 0.12)';
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     } else if (weatherType === 'snowy') {
-        while (weatherParticles.length < MAX_WEATHER_PARTICLES) {
+        const maxParticles = getMaxWeatherParticles();
+        while (weatherParticles.length < maxParticles) {
             weatherParticles.push({
                 x: Math.random() * canvasWidth,
                 y: Math.random() * canvasHeight,
                 r: 1.5 + Math.random() * 2.5,
                 speed: 35 + Math.random() * 40,
                 drift: (Math.random() - 0.5) * 20,
-                opacity: 0.5 + Math.random() * 0.4,
+                bucket: Math.floor(Math.random() * SNOW_OPACITY_BUCKETS.length),
             });
         }
+        // Draw snowflakes batched per opacity bucket: one path + one fill each
         ctx.fillStyle = '#ffffff';
-        for (const p of weatherParticles) {
-            ctx.globalAlpha = p.opacity;
+        for (let b = 0; b < SNOW_OPACITY_BUCKETS.length; b++) {
+            ctx.globalAlpha = SNOW_OPACITY_BUCKETS[b];
             ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            for (const p of weatherParticles) {
+                if (p.bucket !== b) continue;
+                ctx.moveTo(p.x + p.r, p.y);
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            }
             ctx.fill();
         }
         ctx.globalAlpha = 1;
@@ -1819,6 +1965,12 @@ function tickWeatherParticles(dt) {
     if (weatherType !== 'rainy' && weatherType !== 'snowy') {
         weatherParticles = [];
         return;
+    }
+
+    // Shed excess particles after a performance tier downgrade
+    const maxParticles = getMaxWeatherParticles();
+    if (weatherParticles.length > maxParticles) {
+        weatherParticles.length = maxParticles;
     }
 
     const devicePixelRatio = effectivePixelRatio;
@@ -1943,22 +2095,24 @@ function render() {
     const devicePixelRatio = effectivePixelRatio;
     const canvasWidth = canvas.width / devicePixelRatio;
     const canvasHeight = canvas.height / devicePixelRatio;
-    
-    // Clear canvas with proper dimensions
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    
-    // Draw field
-    drawField();
-    
+
+    // Blit the cached static layer (background + field markings)
+    ensureFieldCache();
+    ctx.drawImage(offscreenCanvas, 0, 0, canvasWidth, canvasHeight);
+
     // Draw all sectors (batch operations for better performance)
     const sectors = gameState.sectors;
-    
+
     // Update precomputed paths if sector count changed
     if (sectorPaths.length !== sectors.length) {
         precomputeSectorPaths(sectors.length, canvasWidth / 2, canvasHeight / 2);
     }
-    
+
+    // Set shared text state once for all sector labels
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
     sectors.forEach((sector, index) => {
         drawSector(sector, index, sectors.length);
     });
@@ -1966,7 +2120,10 @@ function render() {
     drawEventIndicators();
 
     // Draw atmospheric overlays (day/night then weather on top)
-    drawDayNightOverlay();
+    if (timeOfDay !== 'day') {
+        ensureOverlayCache();
+        ctx.drawImage(overlayCanvas, 0, 0, canvasWidth, canvasHeight);
+    }
     drawWeatherOverlay();
 
     // Update HUD
@@ -2046,15 +2203,33 @@ function updateHUDScaling() {
 }
 
 /**
+ * Write text to a HUD element, skipping the DOM entirely when the value is
+ * unchanged (element refs are looked up once and cached)
+ */
+function setHudText(id, value) {
+    if (lastHudText[id] === value) return;
+
+    let element = hudElements[id];
+    if (!element) {
+        element = document.getElementById(id);
+        if (!element) return;
+        hudElements[id] = element;
+    }
+
+    element.textContent = value;
+    lastHudText[id] = value;
+}
+
+/**
  * Update HUD display
  */
 function updateHUD() {
     if (!gameState) return;
 
-    document.getElementById('score').textContent = gameState.score;
-    document.getElementById('combo').textContent = gameState.combo + 'x';
-    document.getElementById('waves').textContent = gameState.successful_waves;
-    document.getElementById('max-combo').textContent = gameState.max_combo + 'x';
+    setHudText('score', String(gameState.score));
+    setHudText('combo', gameState.combo + 'x');
+    setHudText('waves', String(gameState.successful_waves));
+    setHudText('max-combo', gameState.max_combo + 'x');
 }
 
 /**
@@ -2094,10 +2269,15 @@ function gameLoop(timestamp) {
     if (!isPaused) {
         const updateStartTime = performance.now();
 
-        // Update game state
-        updateGameState(cappedDt);
+        // Update game state at the engine tick rate (~30Hz); the engine
+        // consumes accumulated dt so gameplay timing is unaffected
+        engineTimeAccumulator += cappedDt;
+        if (!gameState || engineTimeAccumulator >= ENGINE_UPDATE_INTERVAL) {
+            updateGameState(engineTimeAccumulator);
+            engineTimeAccumulator = 0;
+        }
 
-        // Advance weather particle positions
+        // Advance weather particle positions every frame for smooth motion
         tickWeatherParticles(cappedDt);
 
         // Update stats
@@ -2133,6 +2313,7 @@ function startGameLoop() {
     
     isGameRunning = true;
     lastTime = 0;
+    engineTimeAccumulator = 0;
     animationId = requestAnimationFrame(gameLoop);
 }
 
@@ -2200,7 +2381,7 @@ function getSectorAtPosition(x, y) {
  */
 function setupInputHandlers() {
     // Mouse move for hover effects
-    canvas.addEventListener('mousemove', (e) => {
+    addTrackedEventListener(canvas, 'mousemove', (e) => {
         if (!isGameRunning || isPaused) {
             hoveredSector = -1;
             return;
@@ -2214,12 +2395,12 @@ function setupInputHandlers() {
     });
     
     // Mouse leave
-    canvas.addEventListener('mouseleave', () => {
+    addTrackedEventListener(canvas, 'mouseleave', () => {
         hoveredSector = -1;
     });
-    
+
     // Click to start wave
-    canvas.addEventListener('click', (e) => {
+    addTrackedEventListener(canvas, 'click', (e) => {
         if (!isGameRunning || isPaused) return;
         
         const rect = canvas.getBoundingClientRect();
@@ -2233,7 +2414,7 @@ function setupInputHandlers() {
     });
     
     // Right-click to boost energy
-    canvas.addEventListener('contextmenu', (e) => {
+    addTrackedEventListener(canvas, 'contextmenu', (e) => {
         e.preventDefault();
         if (!isGameRunning || isPaused) return;
         
@@ -2252,7 +2433,7 @@ function setupInputHandlers() {
     let touchStartTime = 0;
     let touchStartSector = -1;
     
-    canvas.addEventListener('touchstart', (e) => {
+    addTrackedEventListener(canvas, 'touchstart', (e) => {
         if (!isGameRunning || isPaused) return;
         e.preventDefault();
         
@@ -2265,7 +2446,7 @@ function setupInputHandlers() {
         touchStartTime = Date.now();
     }, { passive: false });
     
-    canvas.addEventListener('touchmove', (e) => {
+    addTrackedEventListener(canvas, 'touchmove', (e) => {
         if (!isGameRunning || isPaused) {
             hoveredSector = -1;
             return;
@@ -2280,7 +2461,7 @@ function setupInputHandlers() {
         hoveredSector = getSectorAtPosition(x, y);
     }, { passive: false });
 
-    canvas.addEventListener('touchend', (e) => {
+    addTrackedEventListener(canvas, 'touchend', (e) => {
         if (!isGameRunning || isPaused) return;
         e.preventDefault();
 
@@ -2303,7 +2484,7 @@ function setupInputHandlers() {
     }, { passive: false });
     
     // Keyboard controls
-    document.addEventListener('keydown', (e) => {
+    addTrackedEventListener(document, 'keydown', (e) => {
         if (!isGameRunning) return;
         
         if (e.code === 'Space' && !isPaused) {
@@ -2331,15 +2512,15 @@ function setupInputHandlers() {
     });
     
     // Button handlers
-    document.getElementById('help-toggle').addEventListener('click', toggleHelp);
-    document.getElementById('pause-btn').addEventListener('click', togglePause);
-    document.getElementById('resume-btn').addEventListener('click', togglePause);
-    document.getElementById('restart-btn').addEventListener('click', restartGame);
-    document.getElementById('setup-btn').addEventListener('click', returnToSetup);
+    addTrackedEventListener(document.getElementById('help-toggle'), 'click', toggleHelp);
+    addTrackedEventListener(document.getElementById('pause-btn'), 'click', togglePause);
+    addTrackedEventListener(document.getElementById('resume-btn'), 'click', togglePause);
+    addTrackedEventListener(document.getElementById('restart-btn'), 'click', restartGame);
+    addTrackedEventListener(document.getElementById('setup-btn'), 'click', returnToSetup);
 
     const mascotBtn = document.getElementById('mascot-btn');
     if (mascotBtn) {
-        mascotBtn.addEventListener('click', () => {
+        addTrackedEventListener(mascotBtn, 'click', () => {
             if (!gameState) return;
             const targetSector = hoveredSector >= 0
                 ? hoveredSector
@@ -2350,7 +2531,7 @@ function setupInputHandlers() {
 
     const scoreboardBtn = document.getElementById('scoreboard-btn');
     if (scoreboardBtn) {
-        scoreboardBtn.addEventListener('click', () => {
+        addTrackedEventListener(scoreboardBtn, 'click', () => {
             if (!gameState) return;
             triggerStadiumEvent('scoreboard');
         });
@@ -2370,23 +2551,23 @@ function setupInputHandlers() {
     weatherType = weatherSelect ? weatherSelect.value : 'sunny';
     timeOfDay = timeSelect ? timeSelect.value : 'day';
 
-    soundToggle.addEventListener('change', (e) => {
+    addTrackedEventListener(soundToggle, 'change', (e) => {
         soundEnabled = e.target.checked;
         soundTogglePause.checked = soundEnabled;
     });
 
-    soundTogglePause.addEventListener('change', (e) => {
+    addTrackedEventListener(soundTogglePause, 'change', (e) => {
         soundEnabled = e.target.checked;
         soundToggle.checked = soundEnabled;
     });
 
-    document.getElementById('difficulty-select').addEventListener('change', (e) => {
+    addTrackedEventListener(document.getElementById('difficulty-select'), 'change', (e) => {
         difficulty = e.target.value;
         console.log('Difficulty set to:', difficulty);
     });
 
     if (fieldTypeSelect) {
-        fieldTypeSelect.addEventListener('change', (e) => {
+        addTrackedEventListener(fieldTypeSelect, 'change', (e) => {
             fieldType = e.target.value;
             resetFieldGradients();
             // Notify engine of venue change
@@ -2394,8 +2575,7 @@ function setupInputHandlers() {
                 if (useMockEngine) {
                     mockGameAPI.set_venue(fieldType);
                 } else {
-                    pyodide.globals.set('venue_val', fieldType);
-                    pyodide.runPython('set_venue(venue_val)');
+                    pyFns.set_venue(fieldType);
                 }
                 render();
             }
@@ -2403,8 +2583,9 @@ function setupInputHandlers() {
     }
 
     if (stadiumTypeSelect) {
-        stadiumTypeSelect.addEventListener('change', (e) => {
+        addTrackedEventListener(stadiumTypeSelect, 'change', (e) => {
             stadiumType = e.target.value;
+            sectorColorCache.clear();
 
             if (gameState) {
                 render();
@@ -2413,22 +2594,21 @@ function setupInputHandlers() {
     }
 
     if (weatherSelect) {
-        weatherSelect.addEventListener('change', (e) => {
+        addTrackedEventListener(weatherSelect, 'change', (e) => {
             weatherType = e.target.value;
             weatherParticles = [];
             if (gameState) {
                 if (useMockEngine) {
                     mockGameAPI.set_weather(weatherType);
                 } else {
-                    pyodide.globals.set('weather_val', weatherType);
-                    pyodide.runPython('set_weather(weather_val)');
+                    pyFns.set_weather(weatherType);
                 }
             }
         });
     }
 
     if (timeSelect) {
-        timeSelect.addEventListener('change', (e) => {
+        addTrackedEventListener(timeSelect, 'change', (e) => {
             timeOfDay = e.target.value;
             resetFieldGradients();
             if (gameState) {
@@ -2442,7 +2622,7 @@ function setupInputHandlers() {
         setMasterVolume(initialVolume);
         volumeLabel.textContent = `${volumeSlider.value}%`;
 
-        volumeSlider.addEventListener('input', (e) => {
+        addTrackedEventListener(volumeSlider, 'input', (e) => {
             const volume = Number(e.target.value);
             volumeLabel.textContent = `${volume}%`;
             setMasterVolume(volume / 100);
@@ -2487,6 +2667,7 @@ function startGame() {
     timeOfDay = timeSelectElem ? timeSelectElem.value : 'day';
     weatherParticles = [];
     resetFieldGradients();
+    sectorColorCache.clear();
     resetEventIndicators();
 
     initGame();
@@ -2551,13 +2732,13 @@ function returnToSetup() {
     document.getElementById('tutorial').classList.remove('hidden');
 
     // Reset surface stats for the next run
-    document.getElementById('game-time').textContent = '0:00';
-    document.getElementById('accuracy').textContent = '100%';
-    document.getElementById('streak').textContent = '0';
-    document.getElementById('score').textContent = '0';
-    document.getElementById('combo').textContent = '0x';
-    document.getElementById('waves').textContent = '0';
-    document.getElementById('max-combo').textContent = '0x';
+    setHudText('game-time', '0:00');
+    setHudText('accuracy', '100%');
+    setHudText('streak', '0');
+    setHudText('score', '0');
+    setHudText('combo', '0x');
+    setHudText('waves', '0');
+    setHudText('max-combo', '0x');
 }
 
 /**
@@ -2593,7 +2774,7 @@ async function main() {
         setupInputHandlers();
         
         // Setup start button
-        document.getElementById('start-btn').addEventListener('click', startGame);
+        addTrackedEventListener(document.getElementById('start-btn'), 'click', startGame);
         
         console.log('Game ready!');
     } else {
