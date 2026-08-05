@@ -1,46 +1,80 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+# Dependabot configuration
+#
+# Cadence:  one batched run per month at 03:00 America/Los_Angeles.
+# Grouping: both ecosystems below feed the same `multi-ecosystem-group`, so a
+#           run produces ONE pull request covering npm packages and workflow
+#           actions together.
+# Security: Dependabot security updates are NOT bound by this schedule, by the
+#           grouping, or by the cooldown below. They open on their own as soon
+#           as an advisory lands and ignore `open-pull-requests-limit`. Slow
+#           cadence for routine bumps, fast lane for vulnerabilities.
+#
+# Guidance:
+#   https://github.blog/security/supply-chain-security/tame-dependabot-group-your-updates-slow-the-cadence-keep-security-fast/
+#   https://github.blog/security/application-security/cutting-through-the-noise-how-to-prioritize-dependabot-alerts/
+#   https://docs.github.com/en/code-security/dependabot/working-with-dependabot/configuring-multi-ecosystem-updates
 
 version: 2
-updates:
-  # Enable version updates for npm
-  - package-ecosystem: "npm"
-    directory: "/"
+
+# One consolidated pull request across every ecosystem listed under `updates`.
+multi-ecosystem-groups:
+  all-dependencies:
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 10
+      interval: "monthly"
+      day: "sunday"
+      time: "03:00"
+      timezone: "America/Los_Angeles"
+    labels:
+      - "dependencies"
+      - "automated"
+    assignees:
+      - "gogorichie"
+    # Set here, not per ecosystem: Dependabot rejects `commit-message`
+    # on updates that belong to a multi-ecosystem group. `chore` keeps
+    # dependency bumps out of the semantic-release version bump.
     commit-message:
       prefix: "chore"
       prefix-development: "chore"
       include: "scope"
+
+updates:
+  # package.json / package-lock.json.
+  - package-ecosystem: "npm"
+    directory: "/"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
+    schedule:
+      interval: "monthly"
+      day: "sunday"
+      time: "03:00"
+      timezone: "America/Los_Angeles"
+    # Let a release sit for a week before adopting it, so the community has a
+    # chance to surface bad publishes. Never applied to security updates.
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "automated"
-    reviewers:
-      - "gogorichie"
     assignees:
       - "gogorichie"
 
-  # Enable version updates for GitHub Actions
+  # Workflow actions used by .github/workflows.
   - package-ecosystem: "github-actions"
     directory: "/"
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "ci"
-      include: "scope"
+      interval: "monthly"
+      day: "sunday"
+      time: "03:00"
+      timezone: "America/Los_Angeles"
+    cooldown:
+      default-days: 7
     labels:
       - "dependencies"
       - "github-actions"
       - "automated"
-    reviewers:
-      - "gogorichie"
     assignees:
       - "gogorichie"
