@@ -29,6 +29,13 @@ multi-ecosystem-groups:
       - "automated"
     assignees:
       - "gogorichie"
+    # Set here, not per ecosystem: Dependabot rejects `commit-message`
+    # on updates that belong to a multi-ecosystem group. `chore` keeps
+    # dependency bumps out of the semantic-release version bump.
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
 
 updates:
   # package.json / package-lock.json.
@@ -51,11 +58,6 @@ updates:
       - "automated"
     assignees:
       - "gogorichie"
-    # `chore` keeps dependency bumps out of the semantic-release version bump.
-    commit-message:
-      prefix: "chore"
-      prefix-development: "chore"
-      include: "scope"
 
   # Workflow actions used by .github/workflows.
   - package-ecosystem: "github-actions"
@@ -76,6 +78,3 @@ updates:
       - "automated"
     assignees:
       - "gogorichie"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
